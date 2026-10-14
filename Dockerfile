@@ -10,12 +10,6 @@ ARG BASE_IMAGE=ubuntu:24.04
 # --------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS base
 
-# run.sh/bake pass your host UID/GID so files written into mounted
-# workspaces end up owned by you, not by root or a random uid.
-ARG USERNAME=agent
-ARG UID=1000
-ARG GID=1000
-
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -23,6 +17,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo less jq python3 python3-serial \
  && rm -rf /var/lib/apt/lists/*
+
+# Declared after apt so a different UID/GID doesn't invalidate the apt layer.
+# run.sh/bake pass your host UID/GID so files written into mounted
+# workspaces end up owned by you, not by root or a random uid.
+ARG USERNAME=agent
+ARG UID=1000
+ARG GID=1000
 
 # Non-root user with the requested UID/GID. Ubuntu 24.04 images ship an
 # "ubuntu" user at uid 1000, which would clash with most host users.

@@ -41,10 +41,20 @@ Overridable variables: `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
 and `ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`). Set
 `ROCM_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version tag) to pin the base.
 
-`run.sh` builds on the `default` builder (the docker driver), which uses your local
-image store, so the multi-GB ROCm base is pulled once and reused. A `docker-container`
-builder keeps its own cache, which buildkit garbage-collects, so it can re-download
-the base image. Set `BUILDER=<name>` to use a different builder anyway.
+Both `run.sh` and a plain `docker buildx bake` use your active builder (`BUILDER=<name>`
+overrides it for `run.sh`), so they share one build cache. Plain `bake` builds with UID/GID 1000
+unless `AGENT_UID`/`AGENT_GID` are exported; if your ids differ, export them in your shell
+profile, or the two will build separate user layers.
+
+With a `docker-container` builder, every build exports the image as a tarball and loads it
+into Docker, and the builder keeps its own cache that BuildKit garbage-collects. The ROCm
+base is tens of GB, so with the default GC limits the cache can be evicted between builds.
+Either raise the builder's GC limits (`buildkitd.toml`), or build with the `default` builder
+(docker driver), which builds straight into the local image store with no export step:
+
+```sh
+docker buildx bake --builder default
+```
 
 ## What `run.sh` sets up
 
@@ -64,7 +74,7 @@ The user has passwordless `sudo` inside the containers.
 | `NAME`          | `claude-agent-<flavor>-<workspace>`     |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
-| `BUILDER`       | `default`                               |
+| `BUILDER`       | active buildx builder                   |
 | `DOCKER_ARGS`   | extra `docker run` arguments            |
 
 ## Example: compile and flash an ESP32 sketch

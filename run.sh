@@ -19,7 +19,7 @@
 #   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
 #   CLAUDE_VOLUME  volume holding Claude's login     (default: claude-agent-claude, shared)
 #   AGENT_USER     user name inside the image        (default: agent)
-#   BUILDER        buildx builder to build with      (default: default)
+#   BUILDER        buildx builder to build with      (default: the active one)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
 #
 set -euo pipefail
@@ -45,7 +45,7 @@ IMAGE=${IMAGE:-$IMAGE_REPO:$flavor}
 WORKSPACE=$(readlink -f "${WORKSPACE:-$PWD}")
 CLAUDE_VOLUME=${CLAUDE_VOLUME:-claude-agent-claude}
 AGENT_USER=${AGENT_USER:-agent}
-BUILDER=${BUILDER:-default}
+BUILDER=${BUILDER:-}
 
 # ~/rocm-hip.git -> /work/rocm-hip
 ws_name=$(basename "$WORKSPACE")
@@ -60,17 +60,16 @@ uid=$(id -u); gid=$(id -g)
 [ "$gid" = 0 ] && gid=1000
 
 if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    # docker-bake.hcl holds the build definition. The "default" builder
-    # (docker driver) builds against the local image store, so base images
-    # are pulled once and reused; a docker-container builder keeps its own,
-    # garbage-collected cache and can re-download them.
+    # docker-bake.hcl holds the build definition. Uses the same builder as a
+    # plain "docker buildx bake" (the active one) unless BUILDER is set, so
+    # both share one build cache.
     claude_refresh=${CLAUDE_REFRESH:-0}
     [ ${#refresh[@]} -gt 0 ] && claude_refresh=$(date +%s)
     (
         cd "$here"
         IMAGE_REPO=$IMAGE_REPO AGENT_USER=$AGENT_USER \
         AGENT_UID=$uid AGENT_GID=$gid CLAUDE_REFRESH=$claude_refresh \
-            docker buildx bake --builder "$BUILDER" "${refresh[@]}" \
+            docker buildx bake ${BUILDER:+--builder "$BUILDER"} "${refresh[@]}" \
                 --set "$flavor.tags=$IMAGE" "$flavor"
     )
 fi
