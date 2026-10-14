@@ -1,27 +1,47 @@
 #!/bin/bash
 #
-# Run Claude Code in the ROCm + arduino-cli container.
+# Run Claude Code in one of the claude-agent containers.
 #
-#   ./run.sh                    start claude in the current directory
-#   ./run.sh --continue         any args starting with "-" go to claude
+#   ./run.sh                    claude in the ROCm image, in the current directory
+#   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
+#   ./run.sh --continue         any other args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
-#   ./run.sh --build [...]      rebuild the image first (uses the build cache)
-#   ./run.sh --update [...]     pull a fresh base image, refresh Claude Code, rebuild
+#   ./run.sh --build            rebuild the selected image first (build cache kept)
+#   ./run.sh --update           pull a fresh base, reinstall Claude Code, rebuild
+#
+# run.sh options (--rocm/--arduino, --build/--update) come first, in any order.
+# "docker buildx bake" on its own builds both images.
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
-#   IMAGE          image tag                         (default: claude-agent:latest)
-#   NAME           container name                    (default: claude-agent-<workspace>)
-#   CLAUDE_VOLUME  volume holding Claude's login     (default: claude-agent-claude)
+#   IMAGE_REPO     image repository                  (default: claude-agent)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|arduino>)
+#   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
+#   CLAUDE_VOLUME  volume holding Claude's login     (default: claude-agent-claude, shared)
 #   AGENT_USER     user name inside the image        (default: agent)
-#   BUILDER        buildx builder to build with     (default: default)
+#   BUILDER        buildx builder to build with      (default: default)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
 #
 set -euo pipefail
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 
-IMAGE=${IMAGE:-claude-agent:latest}
+flavor=rocm
+build=0
+refresh=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --rocm)    flavor=rocm ;;
+        --arduino) flavor=arduino ;;
+        --build)   build=1 ;;
+        --update)  build=1; refresh=(--pull) ;;
+        *) break ;;
+    esac
+    shift
+done
+
+IMAGE_REPO=${IMAGE_REPO:-claude-agent}
+IMAGE=${IMAGE:-$IMAGE_REPO:$flavor}
 WORKSPACE=$(readlink -f "${WORKSPACE:-$PWD}")
 CLAUDE_VOLUME=${CLAUDE_VOLUME:-claude-agent-claude}
 AGENT_USER=${AGENT_USER:-agent}
@@ -30,7 +50,7 @@ BUILDER=${BUILDER:-default}
 # ~/rocm-hip.git -> /work/rocm-hip
 ws_name=$(basename "$WORKSPACE")
 ws_name=${ws_name%.git}
-NAME=${NAME:-claude-agent-$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")}
+NAME=${NAME:-claude-agent-$flavor-$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")}
 container_home=/home/$AGENT_USER
 container_ws=/work/$ws_name
 
@@ -39,24 +59,19 @@ uid=$(id -u); gid=$(id -g)
 [ "$uid" = 0 ] && uid=1000
 [ "$gid" = 0 ] && gid=1000
 
-target=
-case "${1:-}" in
-    --build)  target=agent;  shift ;;
-    --update) target=update; shift ;;   # fresh base + latest Claude Code
-esac
-if [ -z "$target" ] && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    target=agent
-fi
-
-if [ -n "$target" ]; then
+if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     # docker-bake.hcl holds the build definition. The "default" builder
-    # (docker driver) builds against the local image store, so the ROCm base
-    # is pulled once and reused; a docker-container builder keeps its own,
-    # garbage-collected cache and can re-download it.
+    # (docker driver) builds against the local image store, so base images
+    # are pulled once and reused; a docker-container builder keeps its own,
+    # garbage-collected cache and can re-download them.
+    claude_refresh=${CLAUDE_REFRESH:-0}
+    [ ${#refresh[@]} -gt 0 ] && claude_refresh=$(date +%s)
     (
         cd "$here"
-        IMAGE=$IMAGE AGENT_USER=$AGENT_USER AGENT_UID=$uid AGENT_GID=$gid \
-            docker buildx bake --builder "$BUILDER" "$target"
+        IMAGE_REPO=$IMAGE_REPO AGENT_USER=$AGENT_USER \
+        AGENT_UID=$uid AGENT_GID=$gid CLAUDE_REFRESH=$claude_refresh \
+            docker buildx bake --builder "$BUILDER" "${refresh[@]}" \
+                --set "$flavor.tags=$IMAGE" "$flavor"
     )
 fi
 
@@ -66,10 +81,6 @@ args=(
     --init
     --name "$NAME"
     --hostname "$NAME"
-    --security-opt seccomp=unconfined
-    --ipc=host
-    --ulimit memlock=-1:-1
-    --ulimit stack=67108864:67108864
     --tmpfs /tmp:rw,suid,exec,size=1G
     --tmpfs /var/tmp:rw,suid,exec,size=1G
     -v "$WORKSPACE:$container_ws"
@@ -97,13 +108,25 @@ add_dev() {
     return 0
 }
 
-add_dev /dev/kfd                                  # ROCm compute
-for d in /dev/dri/card* /dev/dri/renderD*; do     # GPU
-    add_dev "$d"
-done
-for d in /dev/ttyUSB* /dev/ttyACM*; do            # ESP32 / Arduino serial
-    add_dev "$d"
-done
+case "$flavor" in
+    rocm)
+        add_dev /dev/kfd                              # ROCm compute
+        for d in /dev/dri/card* /dev/dri/renderD*; do # GPU
+            add_dev "$d"
+        done
+        args+=(
+            --security-opt seccomp=unconfined
+            --ipc=host
+            --ulimit memlock=-1:-1
+            --ulimit stack=67108864:67108864
+        )
+        ;;
+    arduino)
+        for d in /dev/ttyUSB* /dev/ttyACM*; do        # ESP32 / Arduino serial
+            add_dev "$d"
+        done
+        ;;
+esac
 for g in "${!gids[@]}"; do
     args+=(--group-add "$g")
 done

@@ -1,16 +1,20 @@
-# Pin to a digest (rocm/dev-ubuntu-24.04@sha256:...) or a ROCm version tag for
-# fully reproducible, cache-stable builds; ":latest" moves with every release.
-ARG BASE_IMAGE=rocm/dev-ubuntu-24.04:latest
-FROM ${BASE_IMAGE}
+# Two final targets share one "base" stage:
+#
+#   rocm     ROCm dev image + Claude Code         (BASE_IMAGE=rocm/dev-ubuntu-24.04)
+#   arduino  Ubuntu + arduino-cli + ESP32 core + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#
+# docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds both.
 
-# Build-time knobs. run.sh passes your host UID/GID so files written into
-# mounted workspaces end up owned by you, not by root or a random uid.
+ARG BASE_IMAGE=ubuntu:24.04
+
+# --------------------------------------------------------------------------
+FROM ${BASE_IMAGE} AS base
+
+# run.sh/bake pass your host UID/GID so files written into mounted
+# workspaces end up owned by you, not by root or a random uid.
 ARG USERNAME=agent
 ARG UID=1000
 ARG GID=1000
-ARG ARDUINO_CLI_VERSION=1.5.1
-ARG ARDUINO_BOARD_URLS="https://espressif.github.io/arduino-esp32/package_esp32_index.json"
-ARG ARDUINO_CORES="esp32:esp32"
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,11 +23,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo less jq python3 python3-serial \
  && rm -rf /var/lib/apt/lists/*
-
-# arduino-cli from the official GitHub release
-RUN curl -fsSL "https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
-      | tar -xz -C /usr/local/bin arduino-cli \
- && arduino-cli version
 
 # Non-root user with the requested UID/GID. Ubuntu 24.04 images ship an
 # "ubuntu" user at uid 1000, which would clash with most host users.
@@ -52,7 +51,37 @@ ENV HOME=/home/${USERNAME} \
 # Pre-create the volume mount point so a fresh named volume is owned by the user
 RUN mkdir -p "${CLAUDE_CONFIG_DIR}" "${HOME}/work"
 
-# Arduino board cores (ESP32 by default)
+# No arguments -> claude. Arguments starting with "-" -> passed to claude.
+# Anything else is run as a command (e.g. "bash").
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []
+
+# --------------------------------------------------------------------------
+FROM base AS rocm
+
+# Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
+# changing CLAUDE_REFRESH ("run.sh --update") only rebuilds this layer.
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS arduino
+
+ARG ARDUINO_CLI_VERSION=1.5.1
+ARG ARDUINO_BOARD_URLS="https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+ARG ARDUINO_CORES="esp32:esp32"
+
+# arduino-cli from the official GitHub release
+RUN mkdir -p "${HOME}/.local/bin" \
+ && curl -fsSL "https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
+      | tar -xz -C "${HOME}/.local/bin" arduino-cli \
+ && arduino-cli version
+
+# Board cores (ESP32 by default)
 RUN arduino-cli config init \
  && arduino-cli config set board_manager.additional_urls ${ARDUINO_BOARD_URLS} \
  && arduino-cli core update-index \
@@ -60,16 +89,10 @@ RUN arduino-cli config init \
  && arduino-cli cache clean \
  && arduino-cli core list
 
-# Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
-# "run.sh --update" (which changes CLAUDE_REFRESH) only rebuilds this layer.
+# Claude Code last, as in the rocm target
 ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && claude --version
 
-WORKDIR /home/${USERNAME}/work
-
-# No arguments -> claude. Arguments starting with "-" -> passed to claude.
-# Anything else is run as a command (e.g. "bash").
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD []
+WORKDIR ${HOME}/work
