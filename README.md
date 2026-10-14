@@ -82,7 +82,8 @@ cd ~/claude-agent.git
 
 - **ROCm image:** `/dev/kfd` and `/dev/dri/*` are passed through, and the groups that own them on your host are added automatically. It keeps the ROCm flags from the old `docker run`: `--ipc=host`, unconfined seccomp, unlimited memlock and a large stack.
 - **Arduino image:** any `/dev/ttyUSB*` and `/dev/ttyACM*` present at start are passed through, with their owning group. A board plugged in later needs a restart of the container.
-- **Both:** Claude's login and settings persist in the shared Docker volume `claude-agent-claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`), so you log in once. `/tmp` and `/var/tmp` are tmpfs. Your `~/.gitconfig` is mounted read-only if present, and `ANTHROPIC_API_KEY` is passed through if set.
+- **Both:** Claude's login and settings persist in the shared Docker volume `claude-agent-claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`), so you log in once. That includes `settings.json`, so permissions you save as user settings with `/permissions` stick across runs (project-level ones go to `.claude/` in the workspace, which is your own directory). Set `CLAUDE_VOLUME=$HOME/.claude-agent` (an absolute path) to use a host directory instead, so you can edit the settings from the host. `/tmp` and `/var/tmp` are tmpfs. Your `~/.gitconfig` is mounted read-only if present, and `ANTHROPIC_API_KEY` is passed through if set.
+- **ssh-agent:** if `SSH_AUTH_SOCK` is set, the agent's socket is mounted (not your keys), so `git` and `ssh` inside can use your keys. Your `~/.ssh/known_hosts` is mounted read-only as the system-wide known hosts file. Turn it off with `--no-ssh-agent` or `SSH_AGENT=0`. This is Linux-only: on Docker Desktop for Mac the host socket path can't be mounted.
 
 The user has passwordless `sudo` inside the containers.
 
@@ -96,6 +97,7 @@ The user has passwordless `sudo` inside the containers.
 | `NAME`          | `claude-agent-<flavor>-<workspace>`     |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
+| `SSH_AGENT`     | `1` (share `$SSH_AUTH_SOCK`)            |
 | `BUILDER`       | active buildx builder                   |
 | `DIND_IMAGE`    | `docker:dind`                           |
 | `DOCKER_ARGS`   | extra `docker run` arguments            |

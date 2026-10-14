@@ -11,12 +11,14 @@
 #   ./run.sh --dind ...         give the container its own Docker daemon (dind)
 #   ./run.sh --dind-stop        stop this project's dind (keeps its images)
 #   ./run.sh --dind-rm          remove this project's dind, network and volume
+#   ./run.sh --no-ssh-agent     don't share your ssh-agent (shared by default)
 #
 # Each project directory gets its own dind container, network and volume
 # (claude-dind-<dir>-<hash>), so images and build cache are kept per project.
 # The dind keeps running after claude exits; the next --dind run reuses it.
 #
-# run.sh options (--rocm/--arduino, --build/--update, --dind...) come first,
+# run.sh options (--rocm/--arduino, --build/--update, --dind..., --[no-]ssh-agent)
+# come first,
 # in any order.
 # "docker buildx bake" on its own builds both images.
 #
@@ -25,7 +27,9 @@
 #   IMAGE_REPO     image repository                  (default: claude-agent)
 #   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|arduino>)
 #   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
-#   CLAUDE_VOLUME  volume holding Claude's login     (default: claude-agent-claude, shared)
+#   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
+#                  settings, permissions             (default: claude-agent-claude, shared)
+#   SSH_AGENT      1 shares $SSH_AUTH_SOCK, 0 doesn't (default: 1)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DIND_IMAGE     dind image                        (default: docker:dind)
@@ -38,6 +42,7 @@ here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 flavor=rocm
 build=0
 dind=
+ssh_agent=${SSH_AGENT:-1}
 refresh=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -48,6 +53,8 @@ while [ $# -gt 0 ]; do
         --dind)      dind='run' ;;
         --dind-stop) dind='stop' ;;
         --dind-rm)   dind='rm' ;;
+        --ssh-agent)    ssh_agent=1 ;;
+        --no-ssh-agent) ssh_agent=0 ;;
         *) break ;;
     esac
     shift
@@ -197,6 +204,15 @@ fi
 # Optional extras
 [ -f "$HOME/.gitconfig" ] && args+=(-v "$HOME/.gitconfig:$container_home/.gitconfig:ro")
 [ -n "${ANTHROPIC_API_KEY:-}" ] && args+=(-e ANTHROPIC_API_KEY)
+
+# ssh-agent: the socket is mounted, never the keys. The container user has
+# your UID, so it can use the socket. Your known_hosts becomes the system-wide
+# one (read-only), so ~/.ssh/known_hosts inside stays writable for new hosts.
+if [ "$ssh_agent" = 1 ] && [ -S "${SSH_AUTH_SOCK:-}" ]; then
+    args+=(-v "$SSH_AUTH_SOCK:/run/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/ssh-agent.sock)
+    [ -f "$HOME/.ssh/known_hosts" ] \
+        && args+=(-v "$HOME/.ssh/known_hosts:/etc/ssh/ssh_known_hosts:ro")
+fi
 
 # shellcheck disable=SC2206
 [ -n "${DOCKER_ARGS:-}" ] && args+=($DOCKER_ARGS)
