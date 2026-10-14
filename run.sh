@@ -39,31 +39,25 @@ uid=$(id -u); gid=$(id -g)
 [ "$uid" = 0 ] && uid=1000
 [ "$gid" = 0 ] && gid=1000
 
-build=0
-build_args=()
+target=
 case "${1:-}" in
-    --build)  build=1; shift ;;
-    --update) build=1; shift
-              # Re-pull the base; bust only the Claude Code layer, so apt and
-              # the multi-GB esp32 toolchain layers stay cached.
-              build_args=(--pull --build-arg CLAUDE_REFRESH="$(date +%s)") ;;
+    --build)  target=agent;  shift ;;
+    --update) target=update; shift ;;   # fresh base + latest Claude Code
 esac
+if [ -z "$target" ] && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    target=agent
+fi
 
-if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    # The "default" builder (docker driver) builds against the local image
-    # store, so the ROCm base image is pulled once and reused like any other
-    # image. A docker-container builder keeps a separate, garbage-collected
-    # cache and re-downloads the base whenever it evicts it.
-    # --load makes sure the result lands in "docker images" either way.
-    docker buildx build \
-        --builder "$BUILDER" \
-        --load \
-        "${build_args[@]}" \
-        --build-arg UID="$uid" \
-        --build-arg GID="$gid" \
-        --build-arg USERNAME="$AGENT_USER" \
-        -t "$IMAGE" \
-        "$here"
+if [ -n "$target" ]; then
+    # docker-bake.hcl holds the build definition. The "default" builder
+    # (docker driver) builds against the local image store, so the ROCm base
+    # is pulled once and reused; a docker-container builder keeps its own,
+    # garbage-collected cache and can re-download it.
+    (
+        cd "$here"
+        IMAGE=$IMAGE AGENT_USER=$AGENT_USER AGENT_UID=$uid AGENT_GID=$gid \
+            docker buildx bake --builder "$BUILDER" "$target"
+    )
 fi
 
 # shellcheck disable=SC2054  # commas in --tmpfs options are intentional

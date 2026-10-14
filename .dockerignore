@@ -3,3 +3,4 @@ LICENSE
 README.md
 run.sh
 *~
+docker-bake.hcl

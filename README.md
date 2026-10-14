@@ -17,15 +17,24 @@ cd ~/rocm-hip.git
 - `./run.sh --build` rebuilds the image, reusing the build cache.
 - `./run.sh --update` pulls a fresh base image and reinstalls the latest Claude Code; if the base didn't change, only the Claude Code layer is rebuilt.
 
-## Build caching
+## Building
 
-`run.sh` builds with `docker buildx build --load` on the `default` builder (the
-docker driver). That builder uses your local image store, so the multi-GB ROCm
-base is pulled once and reused. A `docker-container` builder keeps its own cache,
-which buildkit garbage-collects, so it can re-download the base image. Use
-`BUILDER=<name>` to pick a different builder anyway, and pass
-`--build-arg BASE_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version
-tag) to pin the base.
+The build is defined in `docker-bake.hcl`; `run.sh` calls it for you, or run it directly:
+
+```sh
+AGENT_UID=$(id -u) AGENT_GID=$(id -g) docker buildx bake          # cached build
+AGENT_UID=$(id -u) AGENT_GID=$(id -g) docker buildx bake update   # fresh base + latest Claude Code
+docker buildx bake --print                                          # show the resolved config
+```
+
+Overridable variables: `IMAGE`, `BASE_IMAGE`, `AGENT_USER`, `AGENT_UID`, `AGENT_GID`,
+`ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS` and `ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`).
+Set `BASE_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version tag) to pin the base.
+
+`run.sh` builds on the `default` builder (the docker driver), which uses your local
+image store, so the multi-GB ROCm base is pulled once and reused. A `docker-container`
+builder keeps its own cache, which buildkit garbage-collects, so it can re-download
+the base image. Set `BUILDER=<name>` to use a different builder anyway.
 
 ## What `run.sh` sets up
 
@@ -48,8 +57,7 @@ The user has passwordless `sudo` inside the container.
 | `AGENT_USER`    | `agent`                       |
 | `DOCKER_ARGS`   | extra `docker run` arguments  |
 
-Build arguments in the `Dockerfile`: `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`
-and `ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`).
+Image build settings are covered under [Building](#building).
 
 ## Example: compile and flash an ESP32 sketch
 
