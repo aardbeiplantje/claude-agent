@@ -1,4 +1,7 @@
-FROM rocm/dev-ubuntu-24.04:latest
+# Pin to a digest (rocm/dev-ubuntu-24.04@sha256:...) or a ROCm version tag for
+# fully reproducible, cache-stable builds; ":latest" moves with every release.
+ARG BASE_IMAGE=rocm/dev-ubuntu-24.04:latest
+FROM ${BASE_IMAGE}
 
 # Build-time knobs. run.sh passes your host UID/GID so files written into
 # mounted workspaces end up owned by you, not by root or a random uid.
@@ -49,10 +52,6 @@ ENV HOME=/home/${USERNAME} \
 # Pre-create the volume mount point so a fresh named volume is owned by the user
 RUN mkdir -p "${CLAUDE_CONFIG_DIR}" "${HOME}/work"
 
-# Claude Code, installed for the user (lands in ~/.local/bin)
-RUN curl -fsSL https://claude.ai/install.sh | bash \
- && claude --version
-
 # Arduino board cores (ESP32 by default)
 RUN arduino-cli config init \
  && arduino-cli config set board_manager.additional_urls ${ARDUINO_BOARD_URLS} \
@@ -60,6 +59,13 @@ RUN arduino-cli config init \
  && arduino-cli core install ${ARDUINO_CORES} \
  && arduino-cli cache clean \
  && arduino-cli core list
+
+# Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
+# "run.sh --update" (which changes CLAUDE_REFRESH) only rebuilds this layer.
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
 
 WORKDIR /home/${USERNAME}/work
 

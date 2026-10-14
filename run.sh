@@ -5,7 +5,8 @@
 #   ./run.sh                    start claude in the current directory
 #   ./run.sh --continue         any args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
-#   ./run.sh --build [...]      (re)build the image first, pulling a fresh base
+#   ./run.sh --build [...]      rebuild the image first (uses the build cache)
+#   ./run.sh --update [...]     pull a fresh base image, refresh Claude Code, rebuild
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
@@ -13,6 +14,7 @@
 #   NAME           container name                    (default: claude-agent-<workspace>)
 #   CLAUDE_VOLUME  volume holding Claude's login     (default: claude-agent-claude)
 #   AGENT_USER     user name inside the image        (default: agent)
+#   BUILDER        buildx builder to build with     (default: default)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
 #
 set -euo pipefail
@@ -23,6 +25,7 @@ IMAGE=${IMAGE:-claude-agent:latest}
 WORKSPACE=$(readlink -f "${WORKSPACE:-$PWD}")
 CLAUDE_VOLUME=${CLAUDE_VOLUME:-claude-agent-claude}
 AGENT_USER=${AGENT_USER:-agent}
+BUILDER=${BUILDER:-default}
 
 # ~/rocm-hip.git -> /work/rocm-hip
 ws_name=$(basename "$WORKSPACE")
@@ -36,15 +39,26 @@ uid=$(id -u); gid=$(id -g)
 [ "$uid" = 0 ] && uid=1000
 [ "$gid" = 0 ] && gid=1000
 
-build=()
-if [ "${1:-}" = "--build" ]; then
-    build=(--pull)
-    shift
-fi
+build=0
+build_args=()
+case "${1:-}" in
+    --build)  build=1; shift ;;
+    --update) build=1; shift
+              # Re-pull the base; bust only the Claude Code layer, so apt and
+              # the multi-GB esp32 toolchain layers stay cached.
+              build_args=(--pull --build-arg CLAUDE_REFRESH="$(date +%s)") ;;
+esac
 
-if [ ${#build[@]} -gt 0 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    docker build \
-        "${build[@]}" \
+if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    # The "default" builder (docker driver) builds against the local image
+    # store, so the ROCm base image is pulled once and reused like any other
+    # image. A docker-container builder keeps a separate, garbage-collected
+    # cache and re-downloads the base whenever it evicts it.
+    # --load makes sure the result lands in "docker images" either way.
+    docker buildx build \
+        --builder "$BUILDER" \
+        --load \
+        "${build_args[@]}" \
         --build-arg UID="$uid" \
         --build-arg GID="$gid" \
         --build-arg USERNAME="$AGENT_USER" \

@@ -14,7 +14,18 @@ cd ~/rocm-hip.git
 - `./run.sh` starts `claude` in the current directory, mounted at `/work/<dirname>` (a trailing `.git` is dropped).
 - `./run.sh --continue` passes any arguments starting with `-` to `claude`.
 - `./run.sh bash` runs any other command instead of `claude`.
-- `./run.sh --build` rebuilds the image with a freshly pulled base image (do this to update ROCm or Claude Code).
+- `./run.sh --build` rebuilds the image, reusing the build cache.
+- `./run.sh --update` pulls a fresh base image and reinstalls the latest Claude Code; if the base didn't change, only the Claude Code layer is rebuilt.
+
+## Build caching
+
+`run.sh` builds with `docker buildx build --load` on the `default` builder (the
+docker driver). That builder uses your local image store, so the multi-GB ROCm
+base is pulled once and reused. A `docker-container` builder keeps its own cache,
+which buildkit garbage-collects, so it can re-download the base image. Use
+`BUILDER=<name>` to pick a different builder anyway, and pass
+`--build-arg BASE_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version
+tag) to pin the base.
 
 ## What `run.sh` sets up
 
