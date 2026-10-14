@@ -56,6 +56,28 @@ Either raise the builder's GC limits (`buildkitd.toml`), or build with the `defa
 docker buildx bake --builder default
 ```
 
+## Docker inside the container (dind)
+
+`--dind` gives the container its own Docker daemon, so Claude can build and run
+images (including these ones) without access to your host's Docker:
+
+```sh
+cd ~/claude-agent.git
+./run.sh --dind claude remote-control --spawn worktree
+```
+
+- Each project directory gets its own `docker:dind` container, network and volume, named
+  `claude-dind-<dir>-<hash>`, so images and build cache stay separate per project.
+- Inside, `DOCKER_HOST=tcp://dind:2375` points `docker` and `docker buildx` at it. The daemon
+  only listens on that project's private network.
+- The project is also mounted in the dind at the same `/work/<dir>` path, so
+  `docker run -v /work/<dir>/...` from inside works.
+- The dind keeps running after Claude exits, and the next `--dind` run reuses it.
+  `./run.sh --dind-stop` stops it; `./run.sh --dind-rm` removes it along with its network
+  and volume (all its images).
+- The dind runs `--privileged`, and has no GPU or serial devices. Its image store is separate
+  from your host's, so building the ROCm image in there pulls the ~30 GB base again.
+
 ## What `run.sh` sets up
 
 - **ROCm image:** `/dev/kfd` and `/dev/dri/*` are passed through, and the groups that own them on your host are added automatically. It keeps the ROCm flags from the old `docker run`: `--ipc=host`, unconfined seccomp, unlimited memlock and a large stack.
@@ -75,6 +97,7 @@ The user has passwordless `sudo` inside the containers.
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
 | `BUILDER`       | active buildx builder                   |
+| `DIND_IMAGE`    | `docker:dind`                           |
 | `DOCKER_ARGS`   | extra `docker run` arguments            |
 
 ## Example: compile and flash an ESP32 sketch

@@ -6,6 +6,11 @@
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds both.
 
 ARG BASE_IMAGE=ubuntu:24.04
+ARG DOCKER_CLI_IMAGE=docker:cli
+
+# Static docker CLI + buildx/compose plugins, for talking to a dind daemon
+# ("run.sh --dind"). Taken from the official image instead of an apt repo.
+FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 
 # --------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS base
@@ -17,6 +22,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo less jq python3 python3-serial \
  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/ /usr/local/libexec/docker/cli-plugins/
 
 # Declared after apt so a different UID/GID doesn't invalidate the apt layer.
 # run.sh/bake pass your host UID/GID so files written into mounted

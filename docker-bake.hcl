@@ -27,6 +27,10 @@ variable "UBUNTU_IMAGE" {
   default = "ubuntu:24.04"
 }
 
+variable "DOCKER_CLI_IMAGE" {
+  default = "docker:cli"
+}
+
 variable "AGENT_USER" {
   default = "agent"
 }
@@ -70,10 +74,11 @@ target "_common" {
   dockerfile = "Dockerfile"
   platforms  = ["linux/amd64"]
   args = {
-    USERNAME       = AGENT_USER
-    UID            = AGENT_UID
-    GID            = AGENT_GID
-    CLAUDE_REFRESH = CLAUDE_REFRESH
+    DOCKER_CLI_IMAGE = DOCKER_CLI_IMAGE
+    USERNAME         = AGENT_USER
+    UID              = AGENT_UID
+    GID              = AGENT_GID
+    CLAUDE_REFRESH   = CLAUDE_REFRESH
   }
   # Load into the local image store (like "docker build --load"),
   # so "docker run" and run.sh can see the result.
