@@ -24,6 +24,7 @@ RUN apt-get update \
         openssh-client \
         build-essential cmake clang perl \
         python3-dev python3-pip python3-venv \
+        librsvg2-bin python3-cairosvg fonts-dejavu-core fontconfig \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
