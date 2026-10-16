@@ -12,14 +12,21 @@
 #   ./run.sh --dind-stop        stop this project's dind (keeps its images)
 #   ./run.sh --dind-rm          remove this project's dind, network and volume
 #   ./run.sh --no-ssh-agent     don't share your ssh-agent (shared by default)
+#   ./run.sh --serial           allow USB serial boards (default for --arduino)
+#   ./run.sh --no-serial        don't
 #
 # Each project directory gets its own dind container, network and volume
 # (claude-dind-<dir>-<hash>), so images and build cache are kept per project.
 # The dind keeps running after claude exits; the next --dind run reuses it.
 #
-# run.sh options (--rocm/--arduino, --build/--update, --dind..., --[no-]ssh-agent)
-# come first,
-# in any order.
+# Serial: access to every ttyUSB* (major 188) and ttyACM* (major 166) is
+# allowed with a device cgroup rule, and the entrypoint mknods
+# /dev/ttyUSB0..N and /dev/ttyACM0..N in the container. Boards plugged in or
+# re-enumerated after start work without a restart. Nothing from the host's
+# /dev is mounted.
+#
+# run.sh options (--rocm/--arduino, --build/--update, --dind...,
+# --[no-]ssh-agent, --[no-]serial) come first, in any order.
 # "docker buildx bake" on its own builds both images.
 #
 # Environment overrides:
@@ -30,6 +37,8 @@
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
 #   SSH_AGENT      1 shares $SSH_AUTH_SOCK, 0 doesn't (default: 1)
+#   SERIAL         1 allows serial boards, 0 doesn't (default: 1 for arduino, 0 for rocm)
+#   SERIAL_MAX     device nodes created per serial type (default: 8)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DIND_IMAGE     dind image                        (default: docker:dind)
@@ -43,6 +52,7 @@ flavor=rocm
 build=0
 dind=
 ssh_agent=${SSH_AGENT:-1}
+serial=${SERIAL:-}
 refresh=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -55,6 +65,8 @@ while [ $# -gt 0 ]; do
         --dind-rm)   dind='rm' ;;
         --ssh-agent)    ssh_agent=1 ;;
         --no-ssh-agent) ssh_agent=0 ;;
+        --serial)    serial=1 ;;
+        --no-serial) serial=0 ;;
         *) break ;;
     esac
     shift
@@ -66,6 +78,10 @@ WORKSPACE=$(readlink -f "${WORKSPACE:-$PWD}")
 CLAUDE_VOLUME=${CLAUDE_VOLUME:-claude-agent-claude}
 AGENT_USER=${AGENT_USER:-agent}
 BUILDER=${BUILDER:-}
+SERIAL_MAX=${SERIAL_MAX:-8}
+if [ -z "$serial" ]; then
+    [ "$flavor" = arduino ] && serial=1 || serial=0
+fi
 
 # ~/rocm-hip.git -> /work/rocm-hip
 ws_name=$(basename "$WORKSPACE")
@@ -159,15 +175,21 @@ case "$flavor" in
             --ulimit stack=67108864:67108864
         )
         ;;
-    arduino)
-        for d in /dev/ttyUSB* /dev/ttyACM*; do        # ESP32 / Arduino serial
-            add_dev "$d"
-        done
-        ;;
 esac
 for g in "${!gids[@]}"; do
     args+=(--group-add "$g")
 done
+
+# Serial boards: allow whole device types (name:major), not single devices,
+# so boards plugged in later work too. The entrypoint creates the nodes.
+# Don't add ttyS (major 4): it shares its major with the virtual consoles.
+if [ "$serial" = 1 ]; then
+    serial_types=(ttyUSB:188 ttyACM:166)
+    for t in "${serial_types[@]}"; do
+        args+=(--device-cgroup-rule "c ${t#*:}:* rmw")
+    done
+    args+=(-e "SERIAL_NODES=${serial_types[*]}" -e "SERIAL_MAX=$SERIAL_MAX")
+fi
 
 if [ "$dind" = run ]; then
     docker network inspect "$dind_network" >/dev/null 2>&1 \
