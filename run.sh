@@ -38,6 +38,7 @@
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
 #   SSH_AGENT      1 shares $SSH_AUTH_SOCK, 0 doesn't (default: 1)
+#   SSH_KNOWN_HOSTS 1 also mounts your ~/.ssh/known_hosts read-only (default: 0)
 #   SERIAL         1 allows serial boards, 0 doesn't (default: 1 for arduino, 0 for rocm)
 #   SERIAL_MAX     device nodes created per serial type (default: 8)
 #   AGENT_USER     user name inside the image        (default: agent)
@@ -230,14 +231,16 @@ fi
 [ -n "${ANTHROPIC_API_KEY:-}" ] && args+=(-e ANTHROPIC_API_KEY)
 
 # ssh-agent: the socket is mounted, never the keys. The container user has
-# your UID, so it can use the socket. Your known_hosts becomes the system-wide
-# one (read-only), so ~/.ssh/known_hosts inside stays writable for new hosts.
+# your UID, so it can use the socket.
 # accept-new trusts unknown hosts on first use (changed keys still fail), so a
-# restart never stops at a host key prompt.
+# restart never stops at a host key prompt. Your host known_hosts is NOT
+# mounted by default: one outdated entry there (e.g. GitHub's old RSA key)
+# would turn "unknown, accept" into "changed, refuse". SSH_KNOWN_HOSTS=1
+# mounts it read-only as the system-wide file anyway.
 if [ "$ssh_agent" = 1 ] && [ -S "${SSH_AUTH_SOCK:-}" ]; then
     args+=(-v "$SSH_AUTH_SOCK:/run/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/ssh-agent.sock
         -e "GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}")
-    [ -f "$HOME/.ssh/known_hosts" ] \
+    [ "${SSH_KNOWN_HOSTS:-0}" = 1 ] && [ -f "$HOME/.ssh/known_hosts" ] \
         && args+=(-v "$HOME/.ssh/known_hosts:/etc/ssh/ssh_known_hosts:ro")
 fi
 

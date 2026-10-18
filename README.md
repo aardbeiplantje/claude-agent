@@ -85,7 +85,7 @@ cd ~/claude-agent.git
 - **ROCm image:** `/dev/kfd` and `/dev/dri/*` are passed through, and the groups that own them on your host are added automatically. It keeps the ROCm flags from the old `docker run`: `--ipc=host`, unconfined seccomp, unlimited memlock and a large stack.
 - **Serial boards** (default for `--arduino`, opt-in with `--serial` for ROCm): a device cgroup rule allows all `ttyUSB*` (major 188) and `ttyACM*` (major 166) devices, and the entrypoint creates `/dev/ttyUSB0..7` and `/dev/ttyACM0..7` (group `dialout`) inside the container. Boards plugged in, or renumbered after a reset, while the container runs work without a restart. Nothing from the host's `/dev` is mounted. The nodes always exist, so use `arduino-cli board list` (which reads `/sys`) to see what's actually connected. A node with no board behind it fails to open with "No such device or address". `/dev/serial/by-id` doesn't exist (no udev). Turn it off with `--no-serial` or `SERIAL=0`.
 - **Both:** Claude's login and settings persist in the shared Docker volume `claude-agent-claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`), so you log in once. That includes `settings.json`, so permissions you save as user settings with `/permissions` stick across runs (project-level ones go to `.claude/` in the workspace, which is your own directory). Set `CLAUDE_VOLUME=$HOME/.claude-agent` (an absolute path) to use a host directory instead, so you can edit the settings from the host. `/tmp` and `/var/tmp` are tmpfs. Your `~/.gitconfig` is mounted read-only if present, and `ANTHROPIC_API_KEY` is passed through if set.
-- **ssh-agent:** if `SSH_AUTH_SOCK` is set, the agent's socket is mounted (not your keys), so `git` and `ssh` inside can use your keys. Your `~/.ssh/known_hosts` is mounted read-only as the system-wide known hosts file, and `GIT_SSH_COMMAND` is set to `ssh -o StrictHostKeyChecking=accept-new` (override by exporting your own) so new hosts are accepted without a prompt. Turn it off with `--no-ssh-agent` or `SSH_AGENT=0`. This is Linux-only: on Docker Desktop for Mac the host socket path can't be mounted.
+- **ssh-agent:** if `SSH_AUTH_SOCK` is set, the agent's socket is mounted (not your keys), so `git` and `ssh` inside can use your keys. `GIT_SSH_COMMAND` is set to `ssh -o StrictHostKeyChecking=accept-new` (override by exporting your own) so new hosts are accepted without a prompt (a changed host key still fails). Your host `known_hosts` is deliberately not mounted, because one stale entry there would block every push; set `SSH_KNOWN_HOSTS=1` to mount it read-only anyway. Turn it off with `--no-ssh-agent` or `SSH_AGENT=0`. This is Linux-only: on Docker Desktop for Mac the host socket path can't be mounted.
 
 The user has passwordless `sudo` inside the containers.
 
@@ -100,6 +100,7 @@ The user has passwordless `sudo` inside the containers.
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
 | `SSH_AGENT`     | `1` (share `$SSH_AUTH_SOCK`)            |
+| `SSH_KNOWN_HOSTS` | `0` (`1` mounts your known_hosts)     |
 | `SERIAL`        | `1` for arduino, `0` for rocm           |
 | `SERIAL_MAX`    | `8` nodes per serial type               |
 | `BUILDER`       | active buildx builder                   |
