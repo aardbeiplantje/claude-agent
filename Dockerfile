@@ -27,6 +27,14 @@ RUN apt-get update \
         lua5.4 luajit python-is-python3 \
         python3-dev python3-pip python3-venv \
         librsvg2-bin python3-cairosvg fonts-dejavu-core fontconfig \
+        ripgrep fd-find file tree zip unzip xz-utils rsync wget patch \
+        diffutils procps htop strace lsof git-lfs \
+        gdb valgrind clang-format clang-tidy lld ccache pkg-config \
+        autoconf automake libtool bear \
+        libssl-dev zlib1g-dev libffi-dev libsqlite3-dev sqlite3 \
+        liblua5.4-dev luarocks pipx shellcheck shfmt \
+        iproute2 iputils-ping dnsutils netcat-openbsd socat \
+ && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
@@ -88,6 +96,15 @@ FROM base AS bash
 
 # General-purpose: python, perl, lua/luajit, C/C++ (gcc, clang, cmake, ninja)
 # come from base.
+# Node.js (+ npm) and Go from Ubuntu's apt. ARGs don't carry across stages,
+# hence USERNAME again (same default as in base).
+ARG USERNAME=agent
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nodejs npm golang-go \
+ && rm -rf /var/lib/apt/lists/*
+USER ${USERNAME}
+
 # Rust (rustc, cargo, clippy, rustfmt) via rustup, for the user, stable channel.
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
  && "${HOME}/.cargo/bin/cargo" --version
