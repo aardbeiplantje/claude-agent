@@ -3,6 +3,7 @@
 # Run Claude Code in one of the claude-agent containers.
 #
 #   ./run.sh                    claude in the ROCm image, in the current directory
+#   ./run.sh --bash             claude in the general dev image (python, perl, C/C++, Rust)
 #   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
 #   ./run.sh --continue         any other args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
@@ -25,14 +26,14 @@
 # re-enumerated after start work without a restart. Nothing from the host's
 # /dev is mounted.
 #
-# run.sh options (--rocm/--arduino, --build/--update, --dind...,
+# run.sh options (--rocm/--bash/--arduino, --build/--update, --dind...,
 # --[no-]ssh-agent, --[no-]serial) come first, in any order.
-# "docker buildx bake" on its own builds both images.
+# "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
-#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|arduino>)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino>)
 #   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
@@ -57,6 +58,7 @@ refresh=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --rocm)    flavor=rocm ;;
+        --bash)    flavor=bash ;;
         --arduino) flavor=arduino ;;
         --build)   build=1 ;;
         --update)  build=1; refresh=(--pull) ;;

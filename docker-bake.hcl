@@ -2,6 +2,7 @@
 #
 #   docker buildx bake                 build all images into the local image store
 #   docker buildx bake rocm            only claude-agent:rocm
+#   docker buildx bake bash            only claude-agent:bash
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake --print         show the resolved configuration
 #
@@ -65,7 +66,7 @@ group "default" {
 
 # Everything, loaded into the local image store
 group "local" {
-  targets = ["rocm", "arduino"]
+  targets = ["rocm", "bash", "arduino"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
@@ -91,6 +92,15 @@ target "rocm" {
   tags     = ["${IMAGE_REPO}:rocm"]
   args = {
     BASE_IMAGE = ROCM_IMAGE
+  }
+}
+
+target "bash" {
+  inherits = ["_common"]
+  target   = "bash"
+  tags     = ["${IMAGE_REPO}:bash"]
+  args = {
+    BASE_IMAGE = UBUNTU_IMAGE
   }
 }
 

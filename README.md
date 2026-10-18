@@ -1,13 +1,14 @@
 # claude-agent
 
-Claude Code in a container, in two independent images built from one Dockerfile:
+Claude Code in a container, in three independent images built from one Dockerfile:
 
 | Image                  | Base                           | Adds                                   |
 |------------------------|--------------------------------|----------------------------------------|
 | `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Claude Code                            |
+| `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Claude Code             |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, Claude Code   |
 
-Neither depends on the other. Both run as a non-root user that matches your host
+None depends on the others. All include python3 (pip, venv), perl, gcc/g++, clang, cmake and make. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
 
 ## Usage
@@ -15,11 +16,12 @@ UID/GID, so files they write in your workspace stay yours.
 ```sh
 cd ~/rocm-hip.git
 ~/claude-agent/run.sh             # claude in the ROCm image (builds it on first run)
+~/claude-agent/run.sh --bash      # claude in the general dev image, no GPU or board extras
 ~/claude-agent/run.sh --arduino   # claude in the arduino image
 ```
 
 - The current directory is mounted at `/work/<dirname>` (a trailing `.git` is dropped).
-- `--rocm` (default) or `--arduino` selects the image.
+- `--rocm` (default), `--bash` or `--arduino` selects the image.
 - `--build` rebuilds the selected image, reusing the build cache.
 - `--update` pulls a fresh base image and reinstalls the latest Claude Code. If the base didn't change, only the Claude Code layer is rebuilt.
 - After those options, arguments starting with `-` go to `claude` (`./run.sh --continue`). Anything else runs as a command (`./run.sh --arduino bash`).
@@ -93,7 +95,7 @@ The user has passwordless `sudo` inside the containers.
 |-----------------|-----------------------------------------|
 | `WORKSPACE`     | `$PWD`                                  |
 | `IMAGE_REPO`    | `claude-agent`                          |
-| `IMAGE`         | `$IMAGE_REPO:rocm` or `:arduino`        |
+| `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:arduino` |
 | `NAME`          | `claude-agent-<flavor>-<workspace>`     |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |

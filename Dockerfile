@@ -1,9 +1,10 @@
-# Two final targets share one "base" stage:
+# Three final targets share one "base" stage:
 #
 #   rocm     ROCm dev image + Claude Code         (BASE_IMAGE=rocm/dev-ubuntu-24.04)
+#   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
 #   arduino  Ubuntu + arduino-cli + ESP32 core + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #
-# docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds both.
+# docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
 ARG BASE_IMAGE=ubuntu:24.04
 ARG DOCKER_CLI_IMAGE=docker:cli
@@ -74,6 +75,23 @@ FROM base AS rocm
 
 # Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
 # changing CLAUDE_REFRESH ("run.sh --update") only rebuilds this layer.
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS bash
+
+# General-purpose: python, perl, C/C++ (gcc, clang, cmake) come from base.
+# Rust (rustc, cargo, clippy, rustfmt) via rustup, for the user, stable channel.
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
+ && "${HOME}/.cargo/bin/cargo" --version
+ENV PATH=${HOME}/.cargo/bin:${PATH}
+
+# Claude Code last, as in the other targets.
 ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
