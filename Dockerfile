@@ -23,7 +23,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo less jq python3 python3-serial \
         openssh-client \
-        build-essential cmake clang perl \
+        build-essential cmake ninja-build clang perl \
+        lua5.4 luajit python-is-python3 \
         python3-dev python3-pip python3-venv \
         librsvg2-bin python3-cairosvg fonts-dejavu-core fontconfig \
  && rm -rf /var/lib/apt/lists/*
@@ -85,7 +86,8 @@ WORKDIR ${HOME}/work
 # --------------------------------------------------------------------------
 FROM base AS bash
 
-# General-purpose: python, perl, C/C++ (gcc, clang, cmake) come from base.
+# General-purpose: python, perl, lua/luajit, C/C++ (gcc, clang, cmake, ninja)
+# come from base.
 # Rust (rustc, cargo, clippy, rustfmt) via rustup, for the user, stable channel.
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
  && "${HOME}/.cargo/bin/cargo" --version

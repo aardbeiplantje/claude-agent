@@ -8,7 +8,7 @@ Claude Code in a container, in three independent images built from one Dockerfil
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Claude Code             |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, Claude Code   |
 
-None depends on the others. All include python3 (pip, venv), perl, gcc/g++, clang, cmake and make. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup). Both run as a non-root user that matches your host
+None depends on the others. All include python3 (pip, venv, `python` alias), perl, lua 5.4, luajit, gcc/g++, clang, cmake, ninja and make. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
 
 ## Usage
