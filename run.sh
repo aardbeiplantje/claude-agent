@@ -230,8 +230,11 @@ fi
 # ssh-agent: the socket is mounted, never the keys. The container user has
 # your UID, so it can use the socket. Your known_hosts becomes the system-wide
 # one (read-only), so ~/.ssh/known_hosts inside stays writable for new hosts.
+# accept-new trusts unknown hosts on first use (changed keys still fail), so a
+# restart never stops at a host key prompt.
 if [ "$ssh_agent" = 1 ] && [ -S "${SSH_AUTH_SOCK:-}" ]; then
-    args+=(-v "$SSH_AUTH_SOCK:/run/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/ssh-agent.sock)
+    args+=(-v "$SSH_AUTH_SOCK:/run/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/ssh-agent.sock
+        -e "GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}")
     [ -f "$HOME/.ssh/known_hosts" ] \
         && args+=(-v "$HOME/.ssh/known_hosts:/etc/ssh/ssh_known_hosts:ro")
 fi
