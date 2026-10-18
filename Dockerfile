@@ -30,7 +30,7 @@ RUN apt-get update \
         ripgrep fd-find file tree zip unzip xz-utils rsync wget patch \
         diffutils procps htop strace lsof git-lfs \
         gdb valgrind clang-format clang-tidy lld ccache pkg-config \
-        autoconf automake libtool bear \
+        autoconf automake libtool libtool-bin bear \
         libssl-dev zlib1g-dev libffi-dev libsqlite3-dev sqlite3 \
         liblua5.4-dev luarocks pipx shellcheck shfmt \
         iproute2 iputils-ping dnsutils netcat-openbsd socat \
