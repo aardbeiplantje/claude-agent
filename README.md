@@ -139,5 +139,8 @@ usb_logger log --id 2e3c:5558 --duration 60s -o power.csv
 - The kernel's `usb-storage` and `FAT` driver also claim the FNB58's mass-storage interface.
   That's the meter's built-in log (CFN format), not the data `usb_logger` reads, and it's
   unrelated to the container.
-- Not tested with hardware here: the image build and `run.sh --usb` were checked by reading
-  the code only. Run `usb_logger device list` in the container to confirm the meter shows up.
+- Tested on one host with a JT-UM120 (`2e3c:5558`): after a container restart, `usb_logger
+  device list`, `device show` and a 5-second `log` all work as the agent user, with no sudo.
+  Only the JT-UM120 has been tried. The FNB48, FNB48S, C1 and FNB58 IDs are in the default
+  list but untested. Other hosts and container runtimes (rootless Docker, podman) are untested
+  too: they need device cgroup rules and `CAP_MKNOD`.
