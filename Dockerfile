@@ -4,6 +4,8 @@
 #   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
 #   arduino  Ubuntu + arduino-cli + ESP32 core + usb_logger (USB power meters)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#   android  Ubuntu + JDK 17 + Android SDK (platform, build-tools, platform-tools)
+#            + Gradle + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
@@ -156,6 +158,58 @@ RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
  && usb_logger --help >/dev/null
 
 # Claude Code last, as in the rocm target
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS android
+
+# Android app development. JDK 17 (what the current Android Gradle Plugin needs),
+# the SDK command-line tools with one platform, build tools and platform-tools
+# (adb), and Gradle. The SDK and Gradle live in the user's home, so sdkmanager
+# can add platforms without root. Phones aren't reachable over USB here (no
+# device passthrough for them), so use wireless debugging: adb pair / adb connect
+# to the phone's IP:port.
+ARG USERNAME=agent
+ARG ANDROID_CMDLINE_TOOLS=15859902
+ARG ANDROID_PLATFORM=android-35
+ARG ANDROID_BUILD_TOOLS=35.0.0
+ARG GRADLE_VERSION=8.14.6
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
+ && rm -rf /var/lib/apt/lists/*
+USER ${USERNAME}
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    ANDROID_HOME=${HOME}/android-sdk \
+    ANDROID_SDK_ROOT=${HOME}/android-sdk \
+    GRADLE_HOME=${HOME}/gradle-${GRADLE_VERSION}
+ENV PATH=${GRADLE_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}
+
+RUN set -eux; \
+    mkdir -p "${ANDROID_HOME}/cmdline-tools"; \
+    curl -fsSL -o "${HOME}/cmdline-tools.zip" \
+      "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS}_latest.zip"; \
+    unzip -q "${HOME}/cmdline-tools.zip" -d "${ANDROID_HOME}/cmdline-tools"; \
+    mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest"; \
+    rm "${HOME}/cmdline-tools.zip"
+
+RUN yes | sdkmanager --licenses >/dev/null \
+ && sdkmanager "platform-tools" "platforms;${ANDROID_PLATFORM}" "build-tools;${ANDROID_BUILD_TOOLS}" \
+ && adb version
+
+RUN curl -fsSL -o "${HOME}/gradle.zip" \
+      "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+ && unzip -q "${HOME}/gradle.zip" -d "${HOME}" \
+ && rm "${HOME}/gradle.zip" \
+ && gradle --version
+
+# Claude Code last, as in the other targets.
 ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \

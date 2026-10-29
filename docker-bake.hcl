@@ -4,6 +4,7 @@
 #   docker buildx bake rocm            only claude-agent:rocm
 #   docker buildx bake bash            only claude-agent:bash
 #   docker buildx bake arduino         only claude-agent:arduino
+#   docker buildx bake android         only claude-agent:android
 #   docker buildx bake --print         show the resolved configuration
 #
 # Refresh: pull fresh base images and reinstall Claude Code (only the Claude
@@ -65,13 +66,30 @@ variable "USB_METER_VERSION" {
   default = "3.0.0"
 }
 
+variable "ANDROID_CMDLINE_TOOLS" {
+  # build number in commandlinetools-linux-<n>_latest.zip (developer.android.com/studio)
+  default = "15859902"
+}
+
+variable "ANDROID_PLATFORM" {
+  default = "android-35"
+}
+
+variable "ANDROID_BUILD_TOOLS" {
+  default = "35.0.0"
+}
+
+variable "GRADLE_VERSION" {
+  default = "8.14.6"
+}
+
 group "default" {
   targets = ["local"]
 }
 
 # Everything, loaded into the local image store
 group "local" {
-  targets = ["rocm", "bash", "arduino"]
+  targets = ["rocm", "bash", "arduino", "android"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
@@ -119,5 +137,18 @@ target "arduino" {
     ARDUINO_BOARD_URLS  = ARDUINO_BOARD_URLS
     ARDUINO_CORES       = ARDUINO_CORES
     USB_METER_VERSION   = USB_METER_VERSION
+  }
+}
+
+target "android" {
+  inherits = ["_common"]
+  target   = "android"
+  tags     = ["${IMAGE_REPO}:android"]
+  args = {
+    BASE_IMAGE            = UBUNTU_IMAGE
+    ANDROID_CMDLINE_TOOLS = ANDROID_CMDLINE_TOOLS
+    ANDROID_PLATFORM      = ANDROID_PLATFORM
+    ANDROID_BUILD_TOOLS   = ANDROID_BUILD_TOOLS
+    GRADLE_VERSION        = GRADLE_VERSION
   }
 }

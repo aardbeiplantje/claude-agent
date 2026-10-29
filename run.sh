@@ -5,6 +5,7 @@
 #   ./run.sh                    claude in the ROCm image, in the current directory
 #   ./run.sh --bash             claude in the general dev image (python, perl, C/C++, Rust)
 #   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
+#   ./run.sh --android          claude in the Android SDK/Gradle image
 #   ./run.sh --continue         any other args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
 #   ./run.sh --build            rebuild the selected image first (build cache kept)
@@ -36,14 +37,14 @@
 # replugged meter needs `usb-meter-nodes` run again. Opt-in, because the rule
 # lets the container open any USB device on the host.
 #
-# run.sh options (--rocm/--bash/--arduino, --build/--update, --dind...,
+# run.sh options (--rocm/--bash/--arduino/--android, --build/--update, --dind...,
 # --[no-]ssh-agent, --[no-]serial, --[no-]usb) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
-#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino>)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino|android>)
 #   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
@@ -73,6 +74,7 @@ while [ $# -gt 0 ]; do
         --rocm)    flavor=rocm ;;
         --bash)    flavor=bash ;;
         --arduino) flavor=arduino ;;
+        --android) flavor=android ;;
         --build)   build=1 ;;
         --update)  build=1; refresh=(--pull) ;;
         --dind)      dind='run' ;;

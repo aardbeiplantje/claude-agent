@@ -7,6 +7,7 @@ Claude Code in a container, in three independent images built from one Dockerfil
 | `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Claude Code                             |
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
+| `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
 
 None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
@@ -18,6 +19,7 @@ cd ~/rocm-hip.git
 ~/claude-agent/run.sh             # claude in the ROCm image (builds it on first run)
 ~/claude-agent/run.sh --bash      # claude in the general dev image, no GPU or board extras
 ~/claude-agent/run.sh --arduino   # claude in the arduino image
+~/claude-agent/run.sh --android   # claude in the android image
 ```
 
 - The current directory is mounted at `/work/<dirname>` (a trailing `.git` is dropped).
@@ -40,8 +42,10 @@ docker buildx bake --print                           # show the resolved config
 
 Overridable variables: `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
 `AGENT_UID`, `AGENT_GID`, `CLAUDE_REFRESH`, `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`,
-`ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`) and `USB_METER_VERSION` (the
-`usb-multimeter` release on PyPI). Set
+`ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`), `USB_METER_VERSION` (the
+`usb-multimeter` release on PyPI), and for the android image `ANDROID_CMDLINE_TOOLS` (the
+build number in the command-line tools zip), `ANDROID_PLATFORM`, `ANDROID_BUILD_TOOLS` and
+`GRADLE_VERSION`. Set
 `ROCM_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version tag) to pin the base.
 
 Both `run.sh` and a plain `docker buildx bake` use your active builder (`BUILDER=<name>`
@@ -144,3 +148,27 @@ usb_logger log --id 2e3c:5558 --duration 60s -o power.csv
   Only the JT-UM120 has been tried. The FNB48, FNB48S, C1 and FNB58 IDs are in the default
   list but untested. Other hosts and container runtimes (rootless Docker, podman) are untested
   too: they need device cgroup rules and `CAP_MKNOD`.
+
+## Android development
+
+The android image has JDK 17, the Android SDK command-line tools with `android-35` and
+build-tools `35.0.0` (set with `ANDROID_PLATFORM` and `ANDROID_BUILD_TOOLS`), `adb`, and
+Gradle 8.14.6. The SDK lives in `~/android-sdk` and Gradle in `~/gradle-8.14.6`, both on
+`PATH`, so `sdkmanager` can add platforms without root:
+
+```sh
+./run.sh --android
+sdkmanager "platforms;android-36"       # any other platform, from inside the container
+```
+
+Phones aren't passed through over USB, so use wireless debugging: on the phone, enable
+Developer options, then Wireless debugging, and use the IP and ports it shows:
+
+```sh
+adb pair 192.168.1.50:37123             # pairing code from the phone
+adb connect 192.168.1.50:41234          # the connect port, which differs from the pairing port
+adb devices
+```
+
+The container is on Docker's bridge network, so the phone has to be on a network the host
+can reach. `adb`'s mDNS discovery doesn't work from a bridge network, so use the IP and port.
