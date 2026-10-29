@@ -6,7 +6,7 @@ Claude Code in a container, in three independent images built from one Dockerfil
 |------------------------|--------------------------------|-----------------------------------------|
 | `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Claude Code                             |
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
-| `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, Claude Code    |
+| `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
 
 None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
@@ -39,8 +39,9 @@ docker buildx bake --print                           # show the resolved config
 ```
 
 Overridable variables: `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
-`AGENT_UID`, `AGENT_GID`, `CLAUDE_REFRESH`, `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`
-and `ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`). Set
+`AGENT_UID`, `AGENT_GID`, `CLAUDE_REFRESH`, `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`,
+`ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`) and `USB_METER_VERSION` (the
+`usb-multimeter` release on PyPI). Set
 `ROCM_IMAGE=rocm/dev-ubuntu-24.04@sha256:...` (or a ROCm version tag) to pin the base.
 
 Both `run.sh` and a plain `docker buildx bake` use your active builder (`BUILDER=<name>`
@@ -77,13 +78,14 @@ cd ~/claude-agent.git
 - The dind keeps running after Claude exits, and the next `--dind` run reuses it.
   `./run.sh --dind-stop` stops it; `./run.sh --dind-rm` removes it along with its network
   and volume (all its images).
-- The dind runs `--privileged`, and has no GPU or serial devices. Its image store is separate
+- The dind runs `--privileged`, and has no GPU, serial or USB devices. Its image store is separate
   from your host's, so building the ROCm image in there pulls the ~30 GB base again.
 
 ## What `run.sh` sets up
 
 - **ROCm image:** `/dev/kfd` and `/dev/dri/*` are passed through, and the groups that own them on your host are added automatically. It keeps the ROCm flags from the old `docker run`: `--ipc=host`, unconfined seccomp, unlimited memlock and a large stack.
 - **Serial boards** (default for `--arduino`, opt-in with `--serial` for ROCm): a device cgroup rule allows all `ttyUSB*` (major 188) and `ttyACM*` (major 166) devices, and the entrypoint creates `/dev/ttyUSB0..7` and `/dev/ttyACM0..7` (group `dialout`) inside the container. Boards plugged in, or renumbered after a reset, while the container runs work without a restart. Nothing from the host's `/dev` is mounted. The nodes always exist, so use `arduino-cli board list` (which reads `/sys`) to see what's actually connected. A node with no board behind it fails to open with "No such device or address". `/dev/serial/by-id` doesn't exist (no udev). Turn it off with `--no-serial` or `SERIAL=0`.
+- **USB power meters** (opt-in with `--usb` or `USB=1`, any image): a device cgroup rule allows USB char major 189, and the entrypoint mknods `/dev/bus/usb/<bus>/<dev>` for each supported meter, owned by the container's `dialout` group, the same way it makes the serial nodes. Nothing from the host's `/dev` is mounted. A meter replugged while the container runs needs `usb-meter-nodes` run again. The rule lets the container open every USB device on the host, which is why it's opt-in. See [USB power meters](#usb-power-meters-jt-um120-fnirsi).
 - **Both:** Claude's login and settings persist in the shared Docker volume `claude-agent-claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`), so you log in once. That includes `settings.json`, so permissions you save as user settings with `/permissions` stick across runs (project-level ones go to `.claude/` in the workspace, which is your own directory). Set `CLAUDE_VOLUME=$HOME/.claude-agent` (an absolute path) to use a host directory instead, so you can edit the settings from the host. `/tmp` and `/var/tmp` are tmpfs. Your `~/.gitconfig` is mounted read-only if present, and `ANTHROPIC_API_KEY` is passed through if set.
 - **ssh-agent:** if `SSH_AUTH_SOCK` is set, the agent's socket is mounted (not your keys), so `git` and `ssh` inside can use your keys. `GIT_SSH_COMMAND` is set to `ssh -o StrictHostKeyChecking=accept-new` (override by exporting your own) so new hosts are accepted without a prompt (a changed host key still fails). Your host `known_hosts` is deliberately not mounted, because one stale entry there would block every push; set `SSH_KNOWN_HOSTS=1` to mount it read-only anyway. Turn it off with `--no-ssh-agent` or `SSH_AGENT=0`. This is Linux-only: on Docker Desktop for Mac the host socket path can't be mounted.
 
@@ -103,6 +105,7 @@ The user has passwordless `sudo` inside the containers.
 | `SSH_KNOWN_HOSTS` | `0` (`1` mounts your known_hosts)     |
 | `SERIAL`        | `1` for arduino, `0` for rocm           |
 | `SERIAL_MAX`    | `8` nodes per serial type               |
+| `USB`           | `0` (`1` allows USB power meters)       |
 | `BUILDER`       | active buildx builder                   |
 | `DIND_IMAGE`    | `docker:dind`                           |
 | `DOCKER_ARGS`   | extra `docker run` arguments            |
@@ -113,3 +116,28 @@ The user has passwordless `sudo` inside the containers.
 ./run.sh --arduino arduino-cli compile --fqbn esp32:esp32:esp32 MySketch
 ./run.sh --arduino arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32 MySketch
 ```
+
+## USB power meters (JT-UM120, FNIRSI)
+
+The arduino image has `usb_logger` from [rsfzi/JT-UM120-usb-power-data-logger](https://github.com/rsfzi/JT-UM120-usb-power-data-logger)
+(PyPI `usb-multimeter`), for the JT-UM120 (`2e3c:5558`, the Joy-IT meter), FNIRSI FNB48, FNB48S, C1 and FNB58.
+The meters are HID devices, not serial ports, so they need `--usb`:
+
+```sh
+./run.sh --arduino --usb
+usb_logger device list
+usb_logger device show --id 2e3c:5558
+usb_logger log --id 2e3c:5558 --duration 60s -o power.csv
+```
+
+- **No host setup.** The container makes its own node for the meter, the same way it makes
+  the serial ones, so the host's permissions on the device don't matter and the project's
+  udev rule isn't needed. `usb-meter-nodes` finds each supported meter in `/sys` and mknods
+  `/dev/bus/usb/<bus>/<dev>` (char 189, minor `(bus-1)*128 + (dev-1)`, group `dialout`). It
+  runs at container start. After replugging a meter, run `usb-meter-nodes` again.
+  `USB_METER_IDS="vid:pid ..."` changes which meters it looks for.
+- The kernel's `usb-storage` and `FAT` driver also claim the FNB58's mass-storage interface.
+  That's the meter's built-in log (CFN format), not the data `usb_logger` reads, and it's
+  unrelated to the container.
+- Not tested with hardware here: the image build and `run.sh --usb` were checked by reading
+  the code only. Run `usb_logger device list` in the container to confirm the meter shows up.

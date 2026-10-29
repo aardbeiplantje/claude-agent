@@ -21,6 +21,13 @@ if [ -n "${SERIAL_NODES:-}" ]; then
     done
 fi
 
+# USB power meters (run.sh --usb sets USB_METERS=1 and allows USB major 189):
+# make /dev/bus/usb nodes for the meters plugged in now. A meter replugged later
+# needs usb-meter-nodes run again, since its device number changes.
+if [ "${USB_METERS:-0}" = 1 ]; then
+    usb-meter-nodes || echo "entrypoint: usb-meter-nodes failed" >&2
+fi
+
 if [ $# -eq 0 ]; then
     exec claude
 fi

@@ -15,6 +15,8 @@
 #   ./run.sh --no-ssh-agent     don't share your ssh-agent (shared by default)
 #   ./run.sh --serial           allow USB serial boards (default for --arduino)
 #   ./run.sh --no-serial        don't
+#   ./run.sh --usb              allow USB power meters (libusb, /dev/bus/usb)
+#   ./run.sh --no-usb           don't (default)
 #
 # Each project directory gets its own dind container, network and volume
 # (claude-dind-<dir>-<hash>), so images and build cache are kept per project.
@@ -26,8 +28,16 @@
 # re-enumerated after start work without a restart. Nothing from the host's
 # /dev is mounted.
 #
+# USB: the power meters (JT-UM120, FNIRSI) are HID devices that usb_logger reads
+# through libusb. A device cgroup rule allows char major 189 (USB), and the
+# entrypoint mknods /dev/bus/usb/<bus>/<dev> for the meters present (see
+# usb-meter-nodes.sh), owned by the container's dialout group, as for serial.
+# Nothing from the host's /dev is mounted, and the host needs no udev rule. A
+# replugged meter needs `usb-meter-nodes` run again. Opt-in, because the rule
+# lets the container open any USB device on the host.
+#
 # run.sh options (--rocm/--bash/--arduino, --build/--update, --dind...,
-# --[no-]ssh-agent, --[no-]serial) come first, in any order.
+# --[no-]ssh-agent, --[no-]serial, --[no-]usb) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
@@ -41,6 +51,7 @@
 #   SSH_KNOWN_HOSTS 1 also mounts your ~/.ssh/known_hosts read-only (default: 0)
 #   SERIAL         1 allows serial boards, 0 doesn't (default: 1 for arduino, 0 for rocm)
 #   SERIAL_MAX     device nodes created per serial type (default: 8)
+#   USB            1 allows USB power meters, 0 doesn't (default: 0)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DIND_IMAGE     dind image                        (default: docker:dind)
@@ -55,6 +66,7 @@ build=0
 dind=
 ssh_agent=${SSH_AGENT:-1}
 serial=${SERIAL:-}
+usb=${USB:-0}
 refresh=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -70,6 +82,8 @@ while [ $# -gt 0 ]; do
         --no-ssh-agent) ssh_agent=0 ;;
         --serial)    serial=1 ;;
         --no-serial) serial=0 ;;
+        --usb)       usb=1 ;;
+        --no-usb)    usb=0 ;;
         *) break ;;
     esac
     shift
@@ -192,6 +206,11 @@ if [ "$serial" = 1 ]; then
         args+=(--device-cgroup-rule "c ${t#*:}:* rmw")
     done
     args+=(-e "SERIAL_NODES=${serial_types[*]}" -e "SERIAL_MAX=$SERIAL_MAX")
+fi
+
+# USB power meters: the entrypoint makes their /dev/bus/usb nodes (USB_METERS).
+if [ "$usb" = 1 ]; then
+    args+=(--device-cgroup-rule "c 189:* rmw" -e USB_METERS=1)
 fi
 
 if [ "$dind" = run ]; then

@@ -2,7 +2,8 @@
 #
 #   rocm     ROCm dev image + Claude Code         (BASE_IMAGE=rocm/dev-ubuntu-24.04)
 #   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
-#   arduino  Ubuntu + arduino-cli + ESP32 core + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#   arduino  Ubuntu + arduino-cli + ESP32 core + usb_logger (USB power meters)
+#            + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
@@ -61,6 +62,7 @@ RUN set -eux; \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=0755 usb-meter-nodes.sh /usr/local/bin/usb-meter-nodes
 
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
@@ -138,6 +140,20 @@ RUN arduino-cli config init \
  && arduino-cli core install ${ARDUINO_CORES} \
  && arduino-cli cache clean \
  && arduino-cli core list
+
+# usb_logger for the JT-UM120 / FNIRSI USB power meters, from PyPI (the
+# rsfzi/JT-UM120-usb-power-data-logger project), into ~/.local/bin via pipx.
+# pyusb talks to the meter through libusb, which needs its shared library.
+# ARGs don't carry across stages, hence USERNAME again.
+ARG USERNAME=agent
+ARG USB_METER_VERSION=3.0.0
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libusb-1.0-0 \
+ && rm -rf /var/lib/apt/lists/*
+USER ${USERNAME}
+RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
+ && usb_logger --help >/dev/null
 
 # Claude Code last, as in the rocm target
 ARG CLAUDE_REFRESH=0

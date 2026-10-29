@@ -60,6 +60,11 @@ variable "ARDUINO_CORES" {
   default = "esp32:esp32"
 }
 
+variable "USB_METER_VERSION" {
+  # usb-multimeter on PyPI (usb_logger)
+  default = "3.0.0"
+}
+
 group "default" {
   targets = ["local"]
 }
@@ -113,5 +118,6 @@ target "arduino" {
     ARDUINO_CLI_VERSION = ARDUINO_CLI_VERSION
     ARDUINO_BOARD_URLS  = ARDUINO_BOARD_URLS
     ARDUINO_CORES       = ARDUINO_CORES
+    USB_METER_VERSION   = USB_METER_VERSION
   }
 }
