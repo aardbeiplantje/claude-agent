@@ -10,18 +10,12 @@
 #   ./run.sh bash               anything else runs as a command
 #   ./run.sh --build            rebuild the selected image first (build cache kept)
 #   ./run.sh --update           pull a fresh base, reinstall Claude Code, rebuild
-#   ./run.sh --dind ...         give the container its own Docker daemon (dind)
-#   ./run.sh --dind-stop        stop this project's dind (keeps its images)
-#   ./run.sh --dind-rm          remove this project's dind, network and volume
 #   ./run.sh --no-ssh-agent     don't share your ssh-agent (shared by default)
 #   ./run.sh --serial           allow USB serial boards (default for --arduino)
 #   ./run.sh --no-serial        don't
 #   ./run.sh --usb              allow USB power meters (libusb, /dev/bus/usb)
 #   ./run.sh --no-usb           don't (default)
 #
-# Each project directory gets its own dind container, network and volume
-# (claude-dind-<dir>-<hash>), so images and build cache are kept per project.
-# The dind keeps running after claude exits; the next --dind run reuses it.
 #
 # Serial: access to every ttyUSB* (major 188) and ttyACM* (major 166) is
 # allowed with a device cgroup rule, and the entrypoint mknods
@@ -37,7 +31,7 @@
 # replugged meter needs `usb-meter-nodes` run again. Opt-in, because the rule
 # lets the container open any USB device on the host.
 #
-# run.sh options (--rocm/--bash/--arduino/--android, --build/--update, --dind...,
+# run.sh options (--rocm/--bash/--arduino/--android, --build/--update,
 # --[no-]ssh-agent, --[no-]serial, --[no-]usb) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
@@ -55,7 +49,6 @@
 #   USB            1 allows USB power meters, 0 doesn't (default: 0)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
-#   DIND_IMAGE     dind image                        (default: docker:dind)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
 #
 set -euo pipefail
@@ -64,7 +57,6 @@ here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 
 flavor=rocm
 build=0
-dind=
 ssh_agent=${SSH_AGENT:-1}
 serial=${SERIAL:-}
 usb=${USB:-0}
@@ -77,9 +69,6 @@ while [ $# -gt 0 ]; do
         --android) flavor=android ;;
         --build)   build=1 ;;
         --update)  build=1; refresh=(--pull) ;;
-        --dind)      dind='run' ;;
-        --dind-stop) dind='stop' ;;
-        --dind-rm)   dind='rm' ;;
         --ssh-agent)    ssh_agent=1 ;;
         --no-ssh-agent) ssh_agent=0 ;;
         --serial)    serial=1 ;;
@@ -108,25 +97,6 @@ ws_name=${ws_name%.git}
 NAME=${NAME:-claude-agent-$flavor-$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")}
 container_home=/home/$AGENT_USER
 container_ws=/work/$ws_name
-
-# Per-project dind: name from the directory plus a short hash of its full
-# path, so two checkouts with the same name don't share a daemon.
-ws_key=$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")-$(printf %s "$WORKSPACE" | sha256sum | cut -c1-8)
-DIND_IMAGE=${DIND_IMAGE:-docker:dind}
-dind_name=claude-dind-$ws_key
-dind_volume=claude-dind-$ws_key
-dind_network=claude-agent-$ws_key
-
-case "$dind" in
-    stop)
-        docker stop "$dind_name"
-        exit ;;
-    rm)
-        docker rm -f "$dind_name" 2>/dev/null || true
-        docker network rm "$dind_network" 2>/dev/null || true
-        docker volume rm "$dind_volume"
-        exit ;;
-esac
 
 # The image user can't be root; fall back to 1000 if run as root.
 uid=$(id -u); gid=$(id -g)
@@ -213,38 +183,6 @@ fi
 # USB power meters: the entrypoint makes their /dev/bus/usb nodes (USB_METERS).
 if [ "$usb" = 1 ]; then
     args+=(--device-cgroup-rule "c 189:* rmw" -e USB_METERS=1)
-fi
-
-if [ "$dind" = run ]; then
-    docker network inspect "$dind_network" >/dev/null 2>&1 \
-        || docker network create "$dind_network" >/dev/null
-    case "$(docker inspect -f '{{.State.Running}}' "$dind_name" 2>/dev/null || true)" in
-        true)  ;;
-        false) docker start "$dind_name" >/dev/null ;;
-        *)
-            # TLS off: the daemon listens on tcp://dind:2375, reachable only on
-            # this project's private network. The workspace is mounted at the
-            # same path as in the agent, so "docker run -v /work/..." works.
-            docker run -d --privileged \
-                --name "$dind_name" \
-                --hostname "$dind_name" \
-                --network "$dind_network" \
-                --network-alias dind \
-                -e DOCKER_TLS_CERTDIR= \
-                -v "$dind_volume:/var/lib/docker" \
-                -v "$WORKSPACE:$container_ws" \
-                --label claude-agent.workspace="$WORKSPACE" \
-                "$DIND_IMAGE" >/dev/null
-            ;;
-    esac
-    echo "waiting for $dind_name ..." >&2
-    for _ in $(seq 1 60); do
-        docker exec "$dind_name" docker info >/dev/null 2>&1 && break
-        sleep 1
-    done
-    docker exec "$dind_name" docker info >/dev/null 2>&1 \
-        || { echo "dind $dind_name did not come up; see: docker logs $dind_name" >&2; exit 1; }
-    args+=(--network "$dind_network" -e DOCKER_HOST=tcp://dind:2375)
 fi
 
 # Optional extras
