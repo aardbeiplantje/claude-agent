@@ -1,6 +1,6 @@
 # Three final targets share one "base" stage:
 #
-#   rocm     ROCm dev image + Claude Code         (BASE_IMAGE=rocm/dev-ubuntu-24.04)
+#   rocm     ROCm dev image + Rust (rustup) + Claude Code  (BASE_IMAGE=rocm/dev-ubuntu-24.04)
 #   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
 #   arduino  Ubuntu + arduino-cli + ESP32 core + usb_logger (USB power meters)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
@@ -85,6 +85,12 @@ CMD []
 
 # --------------------------------------------------------------------------
 FROM base AS rocm
+
+# Rust (rustc, cargo, clippy, rustfmt) via rustup, for the user, stable channel.
+# Same as in the bash target.
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
+ && "${HOME}/.cargo/bin/cargo" --version
+ENV PATH=${HOME}/.cargo/bin:${PATH}
 
 # Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
 # changing CLAUDE_REFRESH ("run.sh --update") only rebuilds this layer.

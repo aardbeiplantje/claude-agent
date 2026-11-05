@@ -4,12 +4,12 @@ Claude Code in a container, in three independent images built from one Dockerfil
 
 | Image                  | Base                           | Adds                                   |
 |------------------------|--------------------------------|-----------------------------------------|
-| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Claude Code                             |
+| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Rust (rustup), Claude Code              |
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
 | `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
 
-None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `bash` image also has Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
+None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `rocm` and `bash` images also have Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), and the `bash` image has Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
 
 ## Usage
