@@ -164,6 +164,9 @@ case "$flavor" in
             --ulimit stack=67108864:67108864
         )
         ;;
+    bash|arduino)
+        gids[109]=1                                   # bluetooth
+        ;;
 esac
 for g in "${!gids[@]}"; do
     args+=(--group-add "$g")
