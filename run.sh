@@ -15,6 +15,8 @@
 #   ./run.sh --no-serial        don't
 #   ./run.sh --usb              allow USB power meters (libusb, /dev/bus/usb)
 #   ./run.sh --no-usb           don't (default)
+#   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
+#   ./run.sh --no-bluetooth     don't
 #
 #
 # Serial: access to every ttyUSB* (major 188) and ttyACM* (major 166) is
@@ -31,8 +33,14 @@
 # replugged meter needs `usb-meter-nodes` run again. Opt-in, because the rule
 # lets the container open any USB device on the host.
 #
+# Bluetooth: HCI adapters (hci0) live in the host's network namespace, so
+# --bluetooth runs the container with --network host, which drops the
+# container's network isolation. It also adds NET_ADMIN and NET_RAW for the raw
+# HCI socket, and seccomp=unconfined in case Docker's default profile blocks
+# AF_BLUETOOTH. Keep bluetoothd running on the host. Opt-out with --no-bluetooth.
+#
 # run.sh options (--rocm/--bash/--arduino/--android, --build/--update,
-# --[no-]ssh-agent, --[no-]serial, --[no-]usb) come first, in any order.
+# --[no-]ssh-agent, --[no-]serial, --[no-]usb, --[no-]bluetooth) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
@@ -47,6 +55,7 @@
 #   SERIAL         1 allows serial boards, 0 doesn't (default: 1 for arduino, 0 for rocm)
 #   SERIAL_MAX     device nodes created per serial type (default: 8)
 #   USB            1 allows USB power meters, 0 doesn't (default: 0)
+#   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for bash/arduino, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
@@ -60,6 +69,7 @@ build=0
 ssh_agent=${SSH_AGENT:-1}
 serial=${SERIAL:-}
 usb=${USB:-0}
+bluetooth=${BLUETOOTH:-}
 refresh=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -75,6 +85,8 @@ while [ $# -gt 0 ]; do
         --no-serial) serial=0 ;;
         --usb)       usb=1 ;;
         --no-usb)    usb=0 ;;
+        --bluetooth)    bluetooth=1 ;;
+        --no-bluetooth) bluetooth=0 ;;
         *) break ;;
     esac
     shift
@@ -89,6 +101,9 @@ BUILDER=${BUILDER:-}
 SERIAL_MAX=${SERIAL_MAX:-8}
 if [ -z "$serial" ]; then
     [ "$flavor" = arduino ] && serial=1 || serial=0
+fi
+if [ -z "$bluetooth" ]; then
+    { [ "$flavor" = bash ] || [ "$flavor" = arduino ]; } && bluetooth=1 || bluetooth=0
 fi
 
 # ~/rocm-hip.git -> /work/rocm-hip
@@ -162,15 +177,10 @@ case "$flavor" in
             --ipc=host
             --ulimit memlock=-1:-1
             --ulimit stack=67108864:67108864
+            --ulimit nofile=65536:65536
         )
         ;;
-    bash|arduino)
-        gids[109]=1                                   # bluetooth
-        ;;
 esac
-for g in "${!gids[@]}"; do
-    args+=(--group-add "$g")
-done
 
 # Serial boards: allow whole device types (name:major), not single devices,
 # so boards plugged in later work too. The entrypoint creates the nodes.
@@ -187,6 +197,20 @@ fi
 if [ "$usb" = 1 ]; then
     args+=(--device-cgroup-rule "c 189:* rmw" -e USB_METERS=1)
 fi
+
+# Bluetooth HCI: host network namespace, raw HCI socket caps, and the bluetooth
+# group (109 on this host) for adapter access.
+if [ "$bluetooth" = 1 ]; then
+    args+=(--network host
+        --cap-add NET_ADMIN --cap-add NET_RAW
+        --security-opt seccomp=unconfined)
+    gids[109]=1
+fi
+
+# Add the groups that own the passed-through devices (and bluetooth, above).
+for g in "${!gids[@]}"; do
+    args+=(--group-add "$g")
+done
 
 # Optional extras
 [ -f "$HOME/.gitconfig" ] && args+=(-v "$HOME/.gitconfig:$container_home/.gitconfig:ro")
