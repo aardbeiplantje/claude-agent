@@ -11,10 +11,11 @@
 #
 #   usb-meter-nodes                      make nodes for the meters present now
 #   USB_METER_IDS="vid:pid ..."          which meters (default: usb_logger's list)
+#   USB_EXTRA_IDS="vid:pid ..."         more devices to add (run.sh --rtlsdr sets the RTL-SDR IDs)
 #   USB_DEV_ROOT=dir                     where /dev is (tests only; default /dev)
 set -euo pipefail
 
-ids=${USB_METER_IDS:-"0483:003a 0483:003b 2e3c:0049 2e3c:5558"}
+ids="${USB_METER_IDS:-"0483:003a 0483:003b 2e3c:0049 2e3c:5558"} ${USB_EXTRA_IDS:-}"
 root=${USB_DEV_ROOT:-/dev}
 usb_major=189 # char major of /dev/bus/usb/*
 

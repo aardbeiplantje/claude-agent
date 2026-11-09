@@ -15,6 +15,8 @@
 #   ./run.sh --no-serial        don't
 #   ./run.sh --usb              allow USB power meters (libusb, /dev/bus/usb)
 #   ./run.sh --no-usb           don't (default)
+#   ./run.sh --rtlsdr           allow NESDR / RTL-SDR dongles (implies --usb)
+#   ./run.sh --no-rtlsdr        don't (default)
 #   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
 #   ./run.sh --no-bluetooth     don't
 #
@@ -55,6 +57,8 @@
 #   SERIAL         1 allows serial boards, 0 doesn't (default: 1 for arduino, 0 for rocm)
 #   SERIAL_MAX     device nodes created per serial type (default: 8)
 #   USB            1 allows USB power meters, 0 doesn't (default: 0)
+#   RTLSDR         1 allows RTL-SDR dongles, 0 doesn't (default: 0)
+#   RTLSDR_IDS     RTL-SDR vid:pid list          (default: "0bda:2838 0bda:2832")
 #   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for bash/arduino, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
@@ -69,6 +73,8 @@ build=0
 ssh_agent=${SSH_AGENT:-1}
 serial=${SERIAL:-}
 usb=${USB:-0}
+rtlsdr=${RTLSDR:-0}
+rtlsdr_ids=${RTLSDR_IDS:-"0bda:2838 0bda:2832"}   # RTL2832U: NESDR SMArt (2838), NESDR (2832)
 bluetooth=${BLUETOOTH:-}
 refresh=()
 while [ $# -gt 0 ]; do
@@ -85,6 +91,8 @@ while [ $# -gt 0 ]; do
         --no-serial) serial=0 ;;
         --usb)       usb=1 ;;
         --no-usb)    usb=0 ;;
+        --rtlsdr)    rtlsdr=1 ;;
+        --no-rtlsdr) rtlsdr=0 ;;
         --bluetooth)    bluetooth=1 ;;
         --no-bluetooth) bluetooth=0 ;;
         *) break ;;
@@ -191,6 +199,14 @@ if [ "$serial" = 1 ]; then
         args+=(--device-cgroup-rule "c ${t#*:}:* rmw")
     done
     args+=(-e "SERIAL_NODES=${serial_types[*]}" -e "SERIAL_MAX=$SERIAL_MAX")
+fi
+
+# RTL-SDR dongles: same USB nodes as the meters, with the dongle IDs added to
+# the list usb-meter-nodes looks for (USB_EXTRA_IDS). The host's dvb_usb_rtl28xxu
+# driver may claim the dongle first; librtlsdr detaches it from inside the container.
+if [ "$rtlsdr" = 1 ]; then
+    usb=1
+    args+=(-e "USB_EXTRA_IDS=$rtlsdr_ids")
 fi
 
 # USB power meters: the entrypoint makes their /dev/bus/usb nodes (USB_METERS).

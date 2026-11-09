@@ -104,6 +104,7 @@ ARG USERNAME=agent
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends nodejs npm golang-go \
+        rtl-sdr \
  && rm -rf /var/lib/apt/lists/*
 USER ${USERNAME}
 
@@ -149,7 +150,7 @@ ARG USERNAME=agent
 ARG USB_METER_VERSION=3.0.0
 USER root
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libusb-1.0-0 \
+ && apt-get install -y --no-install-recommends libusb-1.0-0 rtl-sdr \
  && rm -rf /var/lib/apt/lists/*
 USER ${USERNAME}
 RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
