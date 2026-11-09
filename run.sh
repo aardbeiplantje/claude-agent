@@ -17,6 +17,8 @@
 #   ./run.sh --no-usb           don't (default)
 #   ./run.sh --rtlsdr           allow NESDR / RTL-SDR dongles (implies --usb)
 #   ./run.sh --no-rtlsdr        don't (default)
+#   ./run.sh --nrf-sniffer      allow nRF52840 dongles for flashing/sniffing (implies --usb)
+#   ./run.sh --no-nrf-sniffer   don't (default)
 #   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
 #   ./run.sh --no-bluetooth     don't
 #
@@ -59,6 +61,8 @@
 #   USB            1 allows USB power meters, 0 doesn't (default: 0)
 #   RTLSDR         1 allows RTL-SDR dongles, 0 doesn't (default: 0)
 #   RTLSDR_IDS     RTL-SDR vid:pid list          (default: "0bda:2838 0bda:2832")
+#   NRF_SNIFFER    1 allows nRF52840 dongles, 0 doesn't (default: 0)
+#   NRF_IDS        nRF52840 vid:pid list         (default: "1915:521f", the Nordic DFU bootloader)
 #   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for bash/arduino, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
@@ -75,6 +79,8 @@ serial=${SERIAL:-}
 usb=${USB:-0}
 rtlsdr=${RTLSDR:-0}
 rtlsdr_ids=${RTLSDR_IDS:-"0bda:2838 0bda:2832"}   # RTL2832U: NESDR SMArt (2838), NESDR (2832)
+nrf_sniffer=${NRF_SNIFFER:-0}
+nrf_ids=${NRF_IDS:-"1915:521f"}                   # Nordic nRF52840 Dongle, DFU bootloader
 bluetooth=${BLUETOOTH:-}
 refresh=()
 while [ $# -gt 0 ]; do
@@ -93,6 +99,8 @@ while [ $# -gt 0 ]; do
         --no-usb)    usb=0 ;;
         --rtlsdr)    rtlsdr=1 ;;
         --no-rtlsdr) rtlsdr=0 ;;
+        --nrf-sniffer)    nrf_sniffer=1 ;;
+        --no-nrf-sniffer) nrf_sniffer=0 ;;
         --bluetooth)    bluetooth=1 ;;
         --no-bluetooth) bluetooth=0 ;;
         *) break ;;
@@ -201,12 +209,24 @@ if [ "$serial" = 1 ]; then
     args+=(-e "SERIAL_NODES=${serial_types[*]}" -e "SERIAL_MAX=$SERIAL_MAX")
 fi
 
-# RTL-SDR dongles: same USB nodes as the meters, with the dongle IDs added to
-# the list usb-meter-nodes looks for (USB_EXTRA_IDS). The host's dvb_usb_rtl28xxu
-# driver may claim the dongle first; librtlsdr detaches it from inside the container.
+# RTL-SDR dongles and nRF52840 dongles: same USB nodes as the meters, with their
+# IDs added to the list usb-meter-nodes looks for (USB_EXTRA_IDS). The host's
+# dvb_usb_rtl28xxu driver may claim an RTL-SDR first; librtlsdr detaches it from
+# inside the container. An nRF52840 dongle shows up as ttyACM once its sniffer
+# firmware runs (covered by --serial); the bootloader ID is for flashing it.
+extra_ids=()
 if [ "$rtlsdr" = 1 ]; then
     usb=1
-    args+=(-e "USB_EXTRA_IDS=$rtlsdr_ids")
+    read -ra rtl_list <<<"$rtlsdr_ids"
+    extra_ids+=("${rtl_list[@]}")
+fi
+if [ "$nrf_sniffer" = 1 ]; then
+    usb=1
+    read -ra nrf_list <<<"$nrf_ids"
+    extra_ids+=("${nrf_list[@]}")
+fi
+if [ ${#extra_ids[@]} -gt 0 ]; then
+    args+=(-e "USB_EXTRA_IDS=${extra_ids[*]}")
 fi
 
 # USB power meters: the entrypoint makes their /dev/bus/usb nodes (USB_METERS).

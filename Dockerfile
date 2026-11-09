@@ -156,6 +156,12 @@ USER ${USERNAME}
 RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
  && usb_logger --help >/dev/null
 
+# adafruit-nrfutil flashes Nordic nRF52840 dongles (the sniffer firmware) over
+# the USB DFU bootloader, with no Nordic SDK. Pinned on PyPI.
+ARG NRFUTIL_VERSION=0.5.3.post16
+RUN pipx install "adafruit-nrfutil==${NRFUTIL_VERSION}" \
+ && adafruit-nrfutil version
+
 # Claude Code last, as in the rocm target
 ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
