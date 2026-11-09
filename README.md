@@ -69,9 +69,9 @@ docker buildx bake --builder default
 - **Serial boards** (default for `--arduino`, opt-in with `--serial` for ROCm): a device cgroup rule allows all `ttyUSB*` (major 188) and `ttyACM*` (major 166) devices, and the entrypoint creates `/dev/ttyUSB0..7` and `/dev/ttyACM0..7` (group `dialout`) inside the container. Boards plugged in, or renumbered after a reset, while the container runs work without a restart. Nothing from the host's `/dev` is mounted. The nodes always exist, so use `arduino-cli board list` (which reads `/sys`) to see what's actually connected. A node with no board behind it fails to open with "No such device or address". `/dev/serial/by-id` doesn't exist (no udev). Turn it off with `--no-serial` or `SERIAL=0`.
 - **USB power meters** (opt-in with `--usb` or `USB=1`, any image): a device cgroup rule allows USB char major 189, and the entrypoint mknods `/dev/bus/usb/<bus>/<dev>` for each supported meter, owned by the container's `dialout` group, the same way it makes the serial nodes. Nothing from the host's `/dev` is mounted. A meter replugged while the container runs needs `usb-meter-nodes` run again. The rule lets the container open every USB device on the host, which is why it's opt-in. See [USB power meters](#usb-power-meters-jt-um120-fnirsi).
 - **RTL-SDR dongles** (opt-in with `--rtlsdr` or `RTLSDR=1`, any image; the tools are installed in `--bash` and `--arduino`): this implies `--usb`, and adds the RTL2832U IDs (`0bda:2838` NESDR SMArt, `0bda:2832` NESDR) to the list `usb-meter-nodes` creates nodes for. Use `rtl_test` or `rtl_sdr` in the container to check it. The host's `dvb_usb_rtl28xxu` kernel driver may claim the dongle first; librtlsdr detaches it from inside the container, and if that fails, blacklist the module on the host with `/etc/modprobe.d/rtlsdr.conf` (`blacklist dvb_usb_rtl28xxu`). Override the IDs with `RTLSDR_IDS="vid:pid ..."`.
-- **nRF52840 sniffer dongle** (opt-in with `--nrf-sniffer` or `NRF_SNIFFER=1`, arduino image): implies `--usb`, and adds the Nordic DFU bootloader ID `1915:521f` to the list `usb-meter-nodes` creates nodes for. The arduino image has Nordic's `nrfutil` (pinned by sha256) with the `device` (2.17.5) and `ble-sniffer` (0.18.0) commands, installed at build time. The sniffer firmware (4.1.1) comes with `ble-sniffer`, under `~/.nrfutil/share/nrfutil-ble-sniffer/firmware/` in the container. Once it runs, the dongle appears as `/dev/ttyACM*`, which `--serial` already allows. Override the bootloader ID with `NRF_IDS="vid:pid ..."`.
+- **nRF52840 sniffer dongle** (opt-in with `--nrf-sniffer` or `NRF_SNIFFER=1`, arduino image): implies `--usb`, and adds the Nordic dongle IDs `1915:521f` (DFU bootloader) and `1915:522a` (running sniffer firmware) to the list `usb-meter-nodes` creates nodes for. The arduino image has Nordic's `nrfutil` (pinned by sha256) with the `device` (2.17.5) and `ble-sniffer` (0.18.0) commands, installed at build time. The sniffer firmware (4.1.1) comes with `ble-sniffer`, under `~/.nrfutil/share/nrfutil-ble-sniffer/firmware/` in the container. Once it runs, the dongle appears as `/dev/ttyACM*`, which `--serial` already allows. Override the bootloader ID with `NRF_IDS="vid:pid ..."`.
 
-  Flash the dongle from inside the container (it needs the bootloader, so the USB bootloader ID above must be visible):
+  The dongle already runs the sniffer firmware (it enumerates as `1915:522a`), so flashing is only needed to re-flash it. If you do, it needs the bootloader ID `1915:521f` visible:
 
   ```sh
   nrfutil device list
@@ -79,10 +79,11 @@ docker buildx bake --builder default
       --firmware ~/.nrfutil/share/nrfutil-ble-sniffer/firmware/sniffer_nrf52840dongle_nrf52840_4.1.1.zip
   ```
 
-  Sniff BLE into a pcap file in the current directory:
+  Sniff BLE into a pcap file in the current directory, then read it with `tshark` (installed in the arduino image):
 
   ```sh
   nrfutil ble-sniffer sniff --port /dev/ttyACM0
+  tshark -r <capture>.pcap
   ```
 
   Not tested on hardware yet.
@@ -109,7 +110,7 @@ The user has passwordless `sudo` inside the containers.
 | `RTLSDR`        | `0` (`1` allows RTL-SDR dongles; implies `USB`) |
 | `RTLSDR_IDS`    | `0bda:2838 0bda:2832` (RTL2832U vid:pid list) |
 | `NRF_SNIFFER`   | `0` (`1` allows nRF52840 dongles; implies `USB`) |
-| `NRF_IDS`       | `1915:521f` (nRF52840 DFU bootloader vid:pid list) |
+| `NRF_IDS`       | `1915:521f 1915:522a` (nRF52840 bootloader and sniffer vid:pid list) |
 | `BUILDER`       | active buildx builder                   |
 | `DOCKER_ARGS`   | extra `docker run` arguments            |
 
@@ -171,3 +172,13 @@ adb devices
 
 The container is on Docker's bridge network, so the phone has to be on a network the host
 can reach. `adb`'s mDNS discovery doesn't work from a bridge network, so use the IP and port.
+
+## Possible future: custom 2.4 GHz protocols on the nRF52840
+
+Not added yet. The nRF52840 radio can run a custom protocol on the 2.4 GHz band, using
+GFSK at 1 or 2 Mbps, with packet format, addressing and channel set chosen in firmware.
+Nordic's Enhanced ShockBurst library (in the nRF5 and nRF Connect SDKs) gives ACKs and
+retries. The limits are fixed GFSK modulation (no OFDM or DSSS), one channel at a time,
+and national transmit power and duty-cycle rules for the 2.4 GHz ISM band. Firmware is
+flashed with a signing key via `nrfutil`, and the SDK toolchain would go in a separate
+image.

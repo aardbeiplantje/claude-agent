@@ -150,7 +150,7 @@ ARG USERNAME=agent
 ARG USB_METER_VERSION=3.0.0
 USER root
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libusb-1.0-0 rtl-sdr \
+ && apt-get install -y --no-install-recommends libusb-1.0-0 rtl-sdr tshark \
  && rm -rf /var/lib/apt/lists/*
 USER ${USERNAME}
 RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \

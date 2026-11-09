@@ -62,7 +62,7 @@
 #   RTLSDR         1 allows RTL-SDR dongles, 0 doesn't (default: 0)
 #   RTLSDR_IDS     RTL-SDR vid:pid list          (default: "0bda:2838 0bda:2832")
 #   NRF_SNIFFER    1 allows nRF52840 dongles, 0 doesn't (default: 0)
-#   NRF_IDS        nRF52840 vid:pid list         (default: "1915:521f", the Nordic DFU bootloader)
+#   NRF_IDS        nRF52840 vid:pid list         (default: "1915:521f 1915:522a", the Nordic DFU bootloader and the running sniffer)
 #   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for bash/arduino, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
@@ -80,7 +80,7 @@ usb=${USB:-0}
 rtlsdr=${RTLSDR:-0}
 rtlsdr_ids=${RTLSDR_IDS:-"0bda:2838 0bda:2832"}   # RTL2832U: NESDR SMArt (2838), NESDR (2832)
 nrf_sniffer=${NRF_SNIFFER:-0}
-nrf_ids=${NRF_IDS:-"1915:521f"}                   # Nordic nRF52840 Dongle, DFU bootloader
+nrf_ids=${NRF_IDS:-"1915:521f 1915:522a"}         # Nordic nRF52840 Dongle: DFU bootloader, sniffer firmware
 bluetooth=${BLUETOOTH:-}
 refresh=()
 while [ $# -gt 0 ]; do
