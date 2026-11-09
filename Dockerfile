@@ -156,11 +156,22 @@ USER ${USERNAME}
 RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
  && usb_logger --help >/dev/null
 
-# adafruit-nrfutil flashes Nordic nRF52840 dongles (the sniffer firmware) over
-# the USB DFU bootloader, with no Nordic SDK. Pinned on PyPI.
-ARG NRFUTIL_VERSION=0.5.3.post16
-RUN pipx install "adafruit-nrfutil==${NRFUTIL_VERSION}" \
- && adafruit-nrfutil version
+# Nordic's nrfutil (the launcher; pinned by sha256) plus its device and
+# ble-sniffer commands. device flashes the nRF52840 Dongle's sniffer firmware
+# (nrfutil device program --traits nordicDfu --firmware <zip>), and ble-sniffer
+# reads the sniffer's serial output (nrfutil ble-sniffer sniff --port ...).
+ARG NRFUTIL_URL="https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/x86_64-unknown-linux-gnu/nrfutil-x86_64-unknown-linux-gnu-1.4.2-8a9090a"
+ARG NRFUTIL_SHA256=a14996288928a92081cadeefd2dd37fcb54ee99a568fd4eaa6fb9586a51fba57
+ARG NRFUTIL_DEVICE=device=2.17.5
+ARG NRFUTIL_BLE_SNIFFER=ble-sniffer=0.18.0
+USER root
+RUN curl -fsSL -o /usr/local/bin/nrfutil "${NRFUTIL_URL}" \
+ && echo "${NRFUTIL_SHA256}  /usr/local/bin/nrfutil" | sha256sum -c - \
+ && chmod 0755 /usr/local/bin/nrfutil
+USER ${USERNAME}
+RUN nrfutil install "${NRFUTIL_DEVICE}" "${NRFUTIL_BLE_SNIFFER}" \
+ && nrfutil device --help >/dev/null \
+ && nrfutil ble-sniffer --help >/dev/null
 
 # Claude Code last, as in the rocm target
 ARG CLAUDE_REFRESH=0

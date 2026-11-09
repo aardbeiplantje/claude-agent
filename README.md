@@ -69,7 +69,23 @@ docker buildx bake --builder default
 - **Serial boards** (default for `--arduino`, opt-in with `--serial` for ROCm): a device cgroup rule allows all `ttyUSB*` (major 188) and `ttyACM*` (major 166) devices, and the entrypoint creates `/dev/ttyUSB0..7` and `/dev/ttyACM0..7` (group `dialout`) inside the container. Boards plugged in, or renumbered after a reset, while the container runs work without a restart. Nothing from the host's `/dev` is mounted. The nodes always exist, so use `arduino-cli board list` (which reads `/sys`) to see what's actually connected. A node with no board behind it fails to open with "No such device or address". `/dev/serial/by-id` doesn't exist (no udev). Turn it off with `--no-serial` or `SERIAL=0`.
 - **USB power meters** (opt-in with `--usb` or `USB=1`, any image): a device cgroup rule allows USB char major 189, and the entrypoint mknods `/dev/bus/usb/<bus>/<dev>` for each supported meter, owned by the container's `dialout` group, the same way it makes the serial nodes. Nothing from the host's `/dev` is mounted. A meter replugged while the container runs needs `usb-meter-nodes` run again. The rule lets the container open every USB device on the host, which is why it's opt-in. See [USB power meters](#usb-power-meters-jt-um120-fnirsi).
 - **RTL-SDR dongles** (opt-in with `--rtlsdr` or `RTLSDR=1`, any image; the tools are installed in `--bash` and `--arduino`): this implies `--usb`, and adds the RTL2832U IDs (`0bda:2838` NESDR SMArt, `0bda:2832` NESDR) to the list `usb-meter-nodes` creates nodes for. Use `rtl_test` or `rtl_sdr` in the container to check it. The host's `dvb_usb_rtl28xxu` kernel driver may claim the dongle first; librtlsdr detaches it from inside the container, and if that fails, blacklist the module on the host with `/etc/modprobe.d/rtlsdr.conf` (`blacklist dvb_usb_rtl28xxu`). Override the IDs with `RTLSDR_IDS="vid:pid ..."`.
-- **nRF52840 sniffer dongle** (opt-in with `--nrf-sniffer` or `NRF_SNIFFER=1`, arduino image): implies `--usb`, and adds the Nordic DFU bootloader ID `1915:521f` to the list `usb-meter-nodes` creates nodes for. The `adafruit-nrfutil` tool (pinned) is in the arduino image and flashes the dongle's bootloader with a sniffer `.zip` package. Once the sniffer firmware runs, the dongle appears as `/dev/ttyACM*`, which `--serial` already allows. Override the bootloader ID with `NRF_IDS="vid:pid ..."`.
+- **nRF52840 sniffer dongle** (opt-in with `--nrf-sniffer` or `NRF_SNIFFER=1`, arduino image): implies `--usb`, and adds the Nordic DFU bootloader ID `1915:521f` to the list `usb-meter-nodes` creates nodes for. The arduino image has Nordic's `nrfutil` (pinned by sha256) with the `device` (2.17.5) and `ble-sniffer` (0.18.0) commands, installed at build time. The sniffer firmware (4.1.1) comes with `ble-sniffer`, under `~/.nrfutil/share/nrfutil-ble-sniffer/firmware/` in the container. Once it runs, the dongle appears as `/dev/ttyACM*`, which `--serial` already allows. Override the bootloader ID with `NRF_IDS="vid:pid ..."`.
+
+  Flash the dongle from inside the container (it needs the bootloader, so the USB bootloader ID above must be visible):
+
+  ```sh
+  nrfutil device list
+  nrfutil device program --traits nordicDfu \
+      --firmware ~/.nrfutil/share/nrfutil-ble-sniffer/firmware/sniffer_nrf52840dongle_nrf52840_4.1.1.zip
+  ```
+
+  Sniff BLE into a pcap file in the current directory:
+
+  ```sh
+  nrfutil ble-sniffer sniff --port /dev/ttyACM0
+  ```
+
+  Not tested on hardware yet.
 - **Both:** Claude's login and settings persist in the shared Docker volume `claude-agent-claude` (`CLAUDE_CONFIG_DIR=/home/agent/.claude`), so you log in once. That includes `settings.json`, so permissions you save as user settings with `/permissions` stick across runs (project-level ones go to `.claude/` in the workspace, which is your own directory). Set `CLAUDE_VOLUME=$HOME/.claude-agent` (an absolute path) to use a host directory instead, so you can edit the settings from the host. `/tmp` and `/var/tmp` are tmpfs. Your `~/.gitconfig` is mounted read-only if present, and `ANTHROPIC_API_KEY` is passed through if set.
 - **ssh-agent:** if `SSH_AUTH_SOCK` is set, the agent's socket is mounted (not your keys), so `git` and `ssh` inside can use your keys. `GIT_SSH_COMMAND` is set to `ssh -o StrictHostKeyChecking=accept-new` (override by exporting your own) so new hosts are accepted without a prompt (a changed host key still fails). Your host `known_hosts` is deliberately not mounted, because one stale entry there would block every push; set `SSH_KNOWN_HOSTS=1` to mount it read-only anyway. Turn it off with `--no-ssh-agent` or `SSH_AGENT=0`. This is Linux-only: on Docker Desktop for Mac the host socket path can't be mounted.
 
