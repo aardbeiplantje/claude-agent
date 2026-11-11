@@ -58,12 +58,6 @@ RUN set -eux; \
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=0755 usb-meter-nodes.sh /usr/local/bin/usb-meter-nodes
 
-# System-wide Claude Code instructions (managed policy location, under /etc, so
-# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md.
-RUN mkdir -p /etc/claude-code
-COPY --chmod=0644 config/claude-code/AGENTS.md /etc/claude-code/AGENTS.md
-COPY --chmod=0644 config/claude-code/CLAUDE.md /etc/claude-code/CLAUDE.md
-
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
@@ -97,6 +91,11 @@ RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && claude --version
 
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
+# last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
+
 WORKDIR ${HOME}/work
 
 # --------------------------------------------------------------------------
@@ -124,6 +123,11 @@ ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && claude --version
+
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
+# last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
 
 WORKDIR ${HOME}/work
 
@@ -171,7 +175,11 @@ RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
 ARG NRFUTIL_URL="https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/x86_64-unknown-linux-gnu/nrfutil-x86_64-unknown-linux-gnu-1.4.2-8a9090a"
 ARG NRFUTIL_SHA256=a14996288928a92081cadeefd2dd37fcb54ee99a568fd4eaa6fb9586a51fba57
 ARG NRFUTIL_DEVICE=device=2.17.5
-RUN mkdir -p "${HOME}/.local/bin" \
+# Changing NRFUTIL_REFRESH ("run.sh --update") re-runs self-upgrade and the
+# latest ble-sniffer install; otherwise this layer stays cached.
+ARG NRFUTIL_REFRESH=0
+RUN echo "nrfutil refresh: ${NRFUTIL_REFRESH}" \
+ && mkdir -p "${HOME}/.local/bin" \
  && curl -fsSL -o "${HOME}/.local/bin/nrfutil" "${NRFUTIL_URL}" \
  && echo "${NRFUTIL_SHA256}  ${HOME}/.local/bin/nrfutil" | sha256sum -c - \
  && chmod 0755 "${HOME}/.local/bin/nrfutil" \
@@ -186,6 +194,11 @@ ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && claude --version
+
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
+# last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
 
 WORKDIR ${HOME}/work
 
@@ -238,5 +251,10 @@ ARG CLAUDE_REFRESH=0
 RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
  && curl -fsSL https://claude.ai/install.sh | bash \
  && claude --version
+
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
+# last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
 
 WORKDIR ${HOME}/work

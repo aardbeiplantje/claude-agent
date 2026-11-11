@@ -45,6 +45,10 @@ variable "CLAUDE_REFRESH" {
   default = "0"
 }
 
+variable "NRFUTIL_REFRESH" {
+  default = "0"
+}
+
 variable "ARDUINO_CLI_VERSION" {
   default = "1.5.1"
 }
@@ -132,6 +136,7 @@ target "arduino" {
     ARDUINO_BOARD_URLS  = ARDUINO_BOARD_URLS
     ARDUINO_CORES       = ARDUINO_CORES
     USB_METER_VERSION   = USB_METER_VERSION
+    NRFUTIL_REFRESH     = NRFUTIL_REFRESH
   }
 }
 

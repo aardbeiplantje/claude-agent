@@ -139,11 +139,13 @@ if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     # plain "docker buildx bake" (the active one) unless BUILDER is set, so
     # both share one build cache.
     claude_refresh=${CLAUDE_REFRESH:-0}
-    [ ${#refresh[@]} -gt 0 ] && claude_refresh=$(date +%s)
+    nrfutil_refresh=${NRFUTIL_REFRESH:-0}
+    [ ${#refresh[@]} -gt 0 ] && claude_refresh=$(date +%s) && nrfutil_refresh=$claude_refresh
     (
         cd "$here"
         IMAGE_REPO=$IMAGE_REPO AGENT_USER=$AGENT_USER \
         AGENT_UID=$uid AGENT_GID=$gid CLAUDE_REFRESH=$claude_refresh \
+        NRFUTIL_REFRESH=$nrfutil_refresh \
             docker buildx bake ${BUILDER:+--builder "$BUILDER"} "${refresh[@]}" \
                 --set "$flavor.tags=$IMAGE" "$flavor"
     )
