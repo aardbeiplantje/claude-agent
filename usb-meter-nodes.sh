@@ -13,7 +13,13 @@
 #   USB_METER_IDS="vid:pid ..."          which meters (default: usb_logger's list)
 #   USB_EXTRA_IDS="vid:pid ..."         more devices to add (run.sh --rtlsdr sets the RTL-SDR IDs)
 #   USB_DEV_ROOT=dir                     where /dev is (tests only; default /dev)
+#   -q                                   no "not plugged in" notice (the entrypoint uses this)
 set -euo pipefail
+
+quiet=0
+if [ "${1:-}" = -q ]; then
+    quiet=1
+fi
 
 ids="${USB_METER_IDS:-"0483:003a 0483:003b 2e3c:0049 2e3c:5558"} ${USB_EXTRA_IDS:-}"
 root=${USB_DEV_ROOT:-/dev}
@@ -44,6 +50,6 @@ for dev in /sys/bus/usb/devices/*; do
     found=$((found + 1))
 done
 
-if [ "$found" -eq 0 ]; then
+if [ "$found" -eq 0 ] && [ "$quiet" = 0 ]; then
     echo "usb-meter-nodes: no meter from [$ids] is plugged in" >&2
 fi

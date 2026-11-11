@@ -25,7 +25,7 @@ fi
 # make /dev/bus/usb nodes for the meters plugged in now. A meter replugged later
 # needs usb-meter-nodes run again, since its device number changes.
 if [ "${USB_METERS:-0}" = 1 ]; then
-    usb-meter-nodes || echo "entrypoint: usb-meter-nodes failed" >&2
+    usb-meter-nodes -q || echo "entrypoint: usb-meter-nodes failed" >&2
 fi
 
 if [ $# -eq 0 ]; then

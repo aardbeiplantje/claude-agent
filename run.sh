@@ -239,7 +239,10 @@ fi
 # Bluetooth HCI: host network namespace, raw HCI socket caps, and the bluetooth
 # group (109 on this host) for adapter access.
 if [ "$bluetooth" = 1 ]; then
+    # Host networking copies the host's /etc/hosts, which has no entry for the
+    # container hostname, so sudo warns "unable to resolve host". Add one.
     args+=(--network host
+        --add-host "$NAME:127.0.0.1"
         --cap-add NET_ADMIN --cap-add NET_RAW
         --security-opt seccomp=unconfined)
     gids[109]=1
