@@ -110,6 +110,7 @@ USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends nodejs npm golang-go \
         rtl-sdr \
+        libjson-xs-perl libwww-curl-perl libterm-readline-gnu-perl libdata-uuid-perl \
  && rm -rf /var/lib/apt/lists/*
 USER ${USERNAME}
 
