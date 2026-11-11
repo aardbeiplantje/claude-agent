@@ -58,6 +58,12 @@ RUN set -eux; \
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=0755 usb-meter-nodes.sh /usr/local/bin/usb-meter-nodes
 
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md.
+RUN mkdir -p /etc/claude-code
+COPY --chmod=0644 config/claude-code/AGENTS.md /etc/claude-code/AGENTS.md
+COPY --chmod=0644 config/claude-code/CLAUDE.md /etc/claude-code/CLAUDE.md
+
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
@@ -156,20 +162,22 @@ USER ${USERNAME}
 RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
  && usb_logger --help >/dev/null
 
-# Nordic's nrfutil (the launcher; pinned by sha256) plus its device and
-# ble-sniffer commands. device flashes the nRF52840 Dongle's sniffer firmware
+# Nordic's nrfutil, installed for the agent user (as on a regular host install)
+# in ~/.local/bin, which is on PATH. The launcher is pinned by sha256; it is then
+# self-upgraded to the latest release and ble-sniffer is installed at latest.
+# device is pinned; device flashes the nRF52840 Dongle's sniffer firmware
 # (nrfutil device program --traits nordicDfu --firmware <zip>), and ble-sniffer
 # reads the sniffer's serial output (nrfutil ble-sniffer sniff --port ...).
 ARG NRFUTIL_URL="https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/x86_64-unknown-linux-gnu/nrfutil-x86_64-unknown-linux-gnu-1.4.2-8a9090a"
 ARG NRFUTIL_SHA256=a14996288928a92081cadeefd2dd37fcb54ee99a568fd4eaa6fb9586a51fba57
 ARG NRFUTIL_DEVICE=device=2.17.5
-ARG NRFUTIL_BLE_SNIFFER=ble-sniffer=0.18.0
-USER root
-RUN curl -fsSL -o /usr/local/bin/nrfutil "${NRFUTIL_URL}" \
- && echo "${NRFUTIL_SHA256}  /usr/local/bin/nrfutil" | sha256sum -c - \
- && chmod 0755 /usr/local/bin/nrfutil
-USER ${USERNAME}
-RUN nrfutil install "${NRFUTIL_DEVICE}" "${NRFUTIL_BLE_SNIFFER}" \
+RUN mkdir -p "${HOME}/.local/bin" \
+ && curl -fsSL -o "${HOME}/.local/bin/nrfutil" "${NRFUTIL_URL}" \
+ && echo "${NRFUTIL_SHA256}  ${HOME}/.local/bin/nrfutil" | sha256sum -c - \
+ && chmod 0755 "${HOME}/.local/bin/nrfutil" \
+ && nrfutil self-upgrade \
+ && nrfutil install "${NRFUTIL_DEVICE}" \
+ && nrfutil install ble-sniffer --force \
  && nrfutil device --help >/dev/null \
  && nrfutil ble-sniffer --help >/dev/null
 
