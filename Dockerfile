@@ -17,7 +17,10 @@ FROM ${BASE_IMAGE} AS base
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+# The Ubuntu base image drops man pages and docs (dpkg excludes); remove that so
+# man, perldoc and the packages below keep their documentation.
+RUN rm -f /etc/dpkg/dpkg.cfg.d/excludes \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo less jq python3 python3-serial \
         openssh-client \
@@ -32,6 +35,11 @@ RUN apt-get update \
         libssl-dev zlib1g-dev libffi-dev libsqlite3-dev sqlite3 \
         liblua5.4-dev luarocks pipx shellcheck shfmt \
         iproute2 iputils-ping dnsutils netcat-openbsd socat \
+        cpanminus perl-doc libperl-dev perltidy \
+        libdbi-perl libdbd-sqlite3-perl libtext-csv-perl libyaml-libyaml-perl \
+        libmoose-perl libreadonly-perl \
+        time ltrace man-db manpages tmux vim-tiny gawk psmisc moreutils bc ncdu \
+        entr direnv \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
