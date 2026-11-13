@@ -4,7 +4,7 @@ Claude Code in a container, in three independent images built from one Dockerfil
 
 | Image                  | Base                           | Adds                                   |
 |------------------------|--------------------------------|-----------------------------------------|
-| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Rust (rustup), Claude Code              |
+| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Rust (rustup), Python venv `~/venv` (torch/torchvision/torchaudio ROCm wheels from TheRock, transformers, pyarrow, soundfile, Pillow, numpy), Claude Code |
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
 | `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
@@ -42,6 +42,8 @@ docker buildx bake --print                           # show the resolved config
 
 Overridable variables: `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
 `AGENT_UID`, `AGENT_GID`, `CLAUDE_REFRESH`, `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`,
+`TORCH_INDEX`, `TORCH_VERSION`, `TORCHVISION_VERSION` and `TORCHAUDIO_VERSION` (the rocm
+image's torch wheels; the index is per GPU family, e.g. `.../v2/gfx110X-all/`),
 `ARDUINO_CORES` (e.g. `"esp32:esp32 arduino:avr"`), `USB_METER_VERSION` (the
 `usb-multimeter` release on PyPI), and for the android image `ANDROID_CMDLINE_TOOLS` (the
 build number in the command-line tools zip), `ANDROID_PLATFORM`, `ANDROID_BUILD_TOOLS` and

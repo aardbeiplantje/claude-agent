@@ -49,6 +49,23 @@ variable "NRFUTIL_REFRESH" {
   default = "0"
 }
 
+variable "TORCH_INDEX" {
+  # TheRock nightly index for one GPU family (gfx1151 = Strix Halo)
+  default = "https://rocm.nightlies.amd.com/v2/gfx1151/"
+}
+
+variable "TORCH_VERSION" {
+  default = "2.9.1+rocm7.13.0a20260513"
+}
+
+variable "TORCHVISION_VERSION" {
+  default = "0.24.0+rocm7.13.0a20260513"
+}
+
+variable "TORCHAUDIO_VERSION" {
+  default = "2.9.0+rocm7.13.0a20260513"
+}
+
 variable "ARDUINO_CLI_VERSION" {
   default = "1.5.1"
 }
@@ -113,7 +130,11 @@ target "rocm" {
   target   = "rocm"
   tags     = ["${IMAGE_REPO}:rocm"]
   args = {
-    BASE_IMAGE = ROCM_IMAGE
+    BASE_IMAGE          = ROCM_IMAGE
+    TORCH_INDEX         = TORCH_INDEX
+    TORCH_VERSION       = TORCH_VERSION
+    TORCHVISION_VERSION = TORCHVISION_VERSION
+    TORCHAUDIO_VERSION  = TORCHAUDIO_VERSION
   }
 }
 

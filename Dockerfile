@@ -1,6 +1,7 @@
 # Three final targets share one "base" stage:
 #
-#   rocm     ROCm dev image + Rust (rustup) + Claude Code  (BASE_IMAGE=rocm/dev-ubuntu-24.04)
+#   rocm     ROCm dev image + Rust (rustup) + Python venv (torch from TheRock) + Claude Code
+#            (BASE_IMAGE=rocm/dev-ubuntu-24.04)
 #   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
 #   arduino  Ubuntu + arduino-cli + ESP32 core + usb_logger (USB power meters)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
@@ -91,6 +92,48 @@ FROM base AS rocm
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
  && "${HOME}/.cargo/bin/cargo" --version
 ENV PATH=${HOME}/.cargo/bin:${PATH}
+
+# Python venv for the agent user with torch and the Hugging Face / data tools.
+# torch, torchvision and torchaudio are the ROCm wheels that go with TheRock
+# (AMD's ROCm build), taken from TheRock's nightly index for one GPU family
+# (TORCH_INDEX; gfx1151 by default). The versions are one matching nightly set
+# (torch 2.9.1 with torchvision 0.24 and torchaudio 2.9). The other packages are
+# pinned. numpy stays 1.26.x, since pyarrow 17 does not work with NumPy 2.
+ARG TORCH_INDEX=https://rocm.nightlies.amd.com/v2/gfx1151/
+ARG TORCH_VERSION=2.9.1+rocm7.13.0a20260513
+ARG TORCHVISION_VERSION=0.24.0+rocm7.13.0a20260513
+ARG TORCHAUDIO_VERSION=2.9.0+rocm7.13.0a20260513
+ARG NUMPY_VERSION=1.26.4
+ARG PYARROW_VERSION=17.0.0
+ARG SOUNDFILE_VERSION=0.14.0
+ARG PILLOW_VERSION=13.0.0
+ARG TRANSFORMERS_VERSION=5.5.1
+# The downloads are large (the torch wheels alone are ~700 MB), so this is split
+# into layers and uses a pip cache mount: a failed or timed-out download resumes
+# from the wheels already fetched, and finished layers stay cached. Needs the
+# BuildKit builder (the default for docker buildx bake).
+ARG USERNAME=agent
+ARG UID=1000
+ARG GID=1000
+RUN python3 -m venv "${HOME}/venv" \
+ && "${HOME}/venv/bin/pip" --version
+ENV PATH=${HOME}/venv/bin:${PATH} \
+    PIP_RETRIES=10 \
+    PIP_TIMEOUT=300
+# torch, torchvision, torchaudio and numpy (torch's own deps come from the same index)
+RUN --mount=type=cache,target=/var/cache/pip-rocm,uid=${UID},gid=${GID} \
+    PIP_CACHE_DIR=/var/cache/pip-rocm \
+ && pip install --extra-index-url "${TORCH_INDEX}" \
+        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+        "torchaudio==${TORCHAUDIO_VERSION}" "numpy==${NUMPY_VERSION}"
+# The rest, from PyPI
+RUN --mount=type=cache,target=/var/cache/pip-rocm,uid=${UID},gid=${GID} \
+    PIP_CACHE_DIR=/var/cache/pip-rocm \
+ && pip install "numpy==${NUMPY_VERSION}" "pyarrow==${PYARROW_VERSION}" \
+        "soundfile==${SOUNDFILE_VERSION}" "pillow==${PILLOW_VERSION}" \
+        "transformers==${TRANSFORMERS_VERSION}"
+# Check that the stack imports (no GPU is needed for that)
+RUN python -c "import numpy, pyarrow, soundfile, PIL, transformers, torch, torchvision, torchaudio; print('torch', torch.__version__, 'hip', torch.version.hip, '| transformers', transformers.__version__, '| pyarrow', pyarrow.__version__)"
 
 # Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
 # changing CLAUDE_REFRESH ("run.sh --update") only rebuilds this layer.
