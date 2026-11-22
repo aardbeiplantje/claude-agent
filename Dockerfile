@@ -7,6 +7,8 @@
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #   android  Ubuntu + JDK 17 + Android SDK (platform, build-tools, platform-tools)
 #            + Gradle + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#   web      Ubuntu + Node.js (LTS) + Playwright with Firefox (for checking web UIs)
+#            + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
@@ -307,6 +309,67 @@ RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
 # System-wide Claude Code instructions (managed policy location, under /etc, so
 # the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
 # last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS web
+
+# Front-end work, with a browser so Claude can look at the page it builds.
+# Node.js LTS from the official tarball (Ubuntu's nodejs is too old for current
+# tooling), Playwright, and Firefox only (Playwright's own build, no Chromium
+# or WebKit). The browser sits in /opt so it doesn't live in the ~/.claude
+# volume and is readable by the agent user.
+ARG USERNAME=agent
+ARG NODE_VERSION=22.11.0
+ARG PLAYWRIGHT_VERSION=1.56.1
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    NODE_PATH=/usr/local/lib/node_modules
+
+# Fonts for screenshots: without them emoji and some scripts are boxes, and
+# Arial/Helvetica metrics differ.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        fonts-noto-core fonts-noto-color-emoji fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node.js (npm included) into /usr/local, checked against the sha256 list that
+# nodejs.org publishes for this version.
+RUN set -eux; \
+    cd /tmp; \
+    base="https://nodejs.org/dist/v${NODE_VERSION}"; \
+    curl -fsSLO "${base}/node-v${NODE_VERSION}-linux-x64.tar.xz"; \
+    curl -fsSLO "${base}/SHASUMS256.txt"; \
+    grep " node-v${NODE_VERSION}-linux-x64.tar.xz\$" SHASUMS256.txt | sha256sum -c -; \
+    tar -xJf "node-v${NODE_VERSION}-linux-x64.tar.xz" -C /usr/local --strip-components=1 --no-same-owner; \
+    rm -f "node-v${NODE_VERSION}-linux-x64.tar.xz" SHASUMS256.txt; \
+    node --version; npm --version
+
+# Playwright and its Firefox build. --with-deps installs the shared libraries
+# Firefox needs (as root here, so no sudo). Only Firefox is installed.
+RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
+ && playwright install --with-deps firefox \
+ && chmod -R a+rX /opt/ms-playwright \
+ && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/* \
+ && playwright --version
+
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
+
+# Same user setup as the other targets: Claude Code last, so a CLAUDE_REFRESH
+# change only rebuilds this layer.
+ENV HOME=/home/${USERNAME} \
+    PATH=/home/${USERNAME}/.local/bin:${PATH} \
+    CLAUDE_CONFIG_DIR=/home/${USERNAME}/.claude
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
+# System-wide Claude Code instructions (managed policy location, under /etc, so
+# the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md.
 COPY config/claude-code/ /etc/claude-code/
 
 WORKDIR ${HOME}/work

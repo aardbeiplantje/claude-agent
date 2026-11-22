@@ -6,6 +6,7 @@
 #   ./run.sh --bash             claude in the general dev image (python, perl, C/C++, Rust)
 #   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
 #   ./run.sh --android          claude in the Android SDK/Gradle image
+#   ./run.sh --web              claude in the web image (Node.js, Playwright + Firefox)
 #   ./run.sh --continue         any other args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
 #   ./run.sh --build            rebuild the selected image first (build cache kept)
@@ -21,6 +22,7 @@
 #   ./run.sh --no-nrf-sniffer   don't (default)
 #   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
 #   ./run.sh --no-bluetooth     don't
+#   ./run.sh --port 5173        publish a container port on the host (127.0.0.1), repeatable
 #
 #
 # Serial: access to every ttyUSB* (major 188) and ttyACM* (major 166) is
@@ -43,14 +45,16 @@
 # HCI socket, and seccomp=unconfined in case Docker's default profile blocks
 # AF_BLUETOOTH. Keep bluetoothd running on the host. Opt-out with --no-bluetooth.
 #
-# run.sh options (--rocm/--bash/--arduino/--android, --build/--update,
+# run.sh options (--rocm/--bash/--arduino/--android/--web, --build/--update,
 # --[no-]ssh-agent, --[no-]serial, --[no-]usb, --[no-]bluetooth) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
-#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino|android>)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino|android|web>)
+#   PORTS          container ports to publish on 127.0.0.1, space-separated
+#                  (default: none; e.g. PORTS="5173 8080" for a dev server)
 #   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
@@ -83,12 +87,16 @@ nrf_sniffer=${NRF_SNIFFER:-0}
 nrf_ids=${NRF_IDS:-"1915:521f 1915:522a"}         # Nordic nRF52840 Dongle: DFU bootloader, sniffer firmware
 bluetooth=${BLUETOOTH:-}
 refresh=()
+ports=()
+read -ra ports_env <<<"${PORTS:-}"
+ports+=("${ports_env[@]}")
 while [ $# -gt 0 ]; do
     case "$1" in
         --rocm)    flavor=rocm ;;
         --bash)    flavor=bash ;;
         --arduino) flavor=arduino ;;
         --android) flavor=android ;;
+        --web)     flavor=web ;;
         --build)   build=1 ;;
         --update)  build=1; refresh=(--pull) ;;
         --ssh-agent)    ssh_agent=1 ;;
@@ -103,6 +111,7 @@ while [ $# -gt 0 ]; do
         --no-nrf-sniffer) nrf_sniffer=0 ;;
         --bluetooth)    bluetooth=1 ;;
         --no-bluetooth) bluetooth=0 ;;
+        --port)         shift; ports+=("$1") ;;
         *) break ;;
     esac
     shift
@@ -198,6 +207,11 @@ case "$flavor" in
             --ulimit nofile=65536:65536
         )
         ;;
+    web)
+        # Firefox uses /dev/shm; Docker's 64 MB default makes it crash on
+        # larger pages.
+        args+=(--shm-size=1g)
+        ;;
 esac
 
 # Serial boards: allow whole device types (name:major), not single devices,
@@ -270,6 +284,14 @@ if [ "$ssh_agent" = 1 ] && [ -S "${SSH_AUTH_SOCK:-}" ]; then
     [ "${SSH_KNOWN_HOSTS:-0}" = 1 ] && [ -f "$HOME/.ssh/known_hosts" ] \
         && args+=(-v "$HOME/.ssh/known_hosts:/etc/ssh/ssh_known_hosts:ro")
 fi
+
+# Published ports: bound to 127.0.0.1 on the host, so a dev server in the
+# container opens at http://127.0.0.1:<port> there. Dev servers must listen
+# on 0.0.0.0 (not localhost) inside the container to be reachable.
+for p in "${ports[@]}"; do
+    [[ "$p" =~ ^[0-9]+$ ]] || { echo "run.sh: bad port: $p" >&2; exit 2; }
+    args+=(-p "127.0.0.1:$p:$p")
+done
 
 # shellcheck disable=SC2206
 [ -n "${DOCKER_ARGS:-}" ] && args+=($DOCKER_ARGS)

@@ -1,6 +1,6 @@
 # claude-agent
 
-Claude Code in a container, in three independent images built from one Dockerfile:
+Claude Code in a container, in independent images built from one Dockerfile:
 
 | Image                  | Base                           | Adds                                   |
 |------------------------|--------------------------------|-----------------------------------------|
@@ -8,6 +8,7 @@ Claude Code in a container, in three independent images built from one Dockerfil
 | `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
 | `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
+| `claude-agent:web`     | `ubuntu:24.04`                 | Node.js LTS (npm), Playwright with Firefox, fonts, Claude Code |
 
 None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `rocm` and `bash` images also have Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), and the `bash` image has Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
@@ -20,10 +21,11 @@ cd ~/rocm-hip.git
 ~/claude-agent/run.sh --bash      # claude in the general dev image, no GPU or board extras
 ~/claude-agent/run.sh --arduino   # claude in the arduino image
 ~/claude-agent/run.sh --android   # claude in the android image
+~/claude-agent/run.sh --web       # claude in the web image (Node.js, Playwright + Firefox)
 ```
 
 - The current directory is mounted at `/work/<dirname>` (a trailing `.git` is dropped).
-- `--rocm` (default), `--bash` or `--arduino` selects the image.
+- `--rocm` (default), `--bash`, `--arduino`, `--android` or `--web` selects the image.
 - `--build` rebuilds the selected image, reusing the build cache.
 - `--update` pulls a fresh base image and reinstalls the latest Claude Code. If the base didn't change, only the Claude Code layer is rebuilt.
 - After those options, arguments starting with `-` go to `claude` (`./run.sh --continue`). Anything else runs as a command (`./run.sh --arduino bash`).
@@ -100,7 +102,8 @@ The user has passwordless `sudo` inside the containers.
 |-----------------|-----------------------------------------|
 | `WORKSPACE`     | `$PWD`                                  |
 | `IMAGE_REPO`    | `claude-agent`                          |
-| `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:arduino` |
+| `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:arduino`, `:android`, `:web` |
+| `PORTS`         | none (space-separated ports to publish on `127.0.0.1`; `--port N` does one) |
 | `NAME`          | `claude-agent-<flavor>-<workspace>`     |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
@@ -150,6 +153,43 @@ usb_logger log --id 2e3c:5558 --duration 60s -o power.csv
   Only the JT-UM120 has been tried. The FNB48, FNB48S, C1 and FNB58 IDs are in the default
   list but untested. Other hosts and container runtimes (rootless Docker, podman) are untested
   too: they need device cgroup rules and `CAP_MKNOD`.
+
+## Web UI development
+
+The web image has Node.js LTS (`node`, `npm`, `npx`), Playwright and Firefox. It has
+no Chromium or WebKit. Firefox is Playwright's own build, in `/opt/ms-playwright`, and
+the Playwright package is installed globally, so `require('playwright')` works from any
+directory. Node.js and Playwright versions are pinned in `docker-bake.hcl` (`NODE_VERSION`,
+`PLAYWRIGHT_VERSION`).
+
+Claude can check a page by writing a short script that takes a screenshot at a given
+size, or by reading the DOM and console. Save screenshots in the workspace or in
+`/tmp`, not in the image. Example:
+
+```js
+const { firefox } = require('playwright');
+(async () => {
+  const browser = await firefox.launch();
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto('http://127.0.0.1:5173');
+  await page.screenshot({ path: 'mobile.png', fullPage: true });
+  await browser.close();
+})();
+```
+
+To open a dev server from the host, publish its port and have it listen on `0.0.0.0`:
+
+```sh
+./run.sh --web --port 5173              # or PORTS="5173 8080" ./run.sh --web
+npm run dev -- --host 0.0.0.0           # Vite; other servers have a similar flag
+```
+
+The web image sets `--shm-size=1g`, since Firefox needs more than Docker's 64 MB
+default `/dev/shm`. The ports are bound to `127.0.0.1` on the host only.
+
+Claude Code can also drive Firefox with the Playwright MCP server. It isn't set up
+in the image, since the `~/.claude` volume holds the MCP config. To add it once:
+`claude mcp add playwright -- npx -y @playwright/mcp@latest --browser firefox`.
 
 ## Android development
 

@@ -5,6 +5,7 @@
 #   docker buildx bake bash            only claude-agent:bash
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake android         only claude-agent:android
+#   docker buildx bake web             only claude-agent:web
 #   docker buildx bake --print         show the resolved configuration
 #
 # Refresh: pull fresh base images and reinstall Claude Code (only the Claude
@@ -100,13 +101,23 @@ variable "GRADLE_VERSION" {
   default = "8.14.6"
 }
 
+variable "NODE_VERSION" {
+  # Node.js release from nodejs.org (22.x is LTS)
+  default = "22.11.0"
+}
+
+variable "PLAYWRIGHT_VERSION" {
+  # npm "playwright" package; its Firefox build is installed with it
+  default = "1.56.1"
+}
+
 group "default" {
   targets = ["local"]
 }
 
 # Everything, loaded into the local image store
 group "local" {
-  targets = ["rocm", "bash", "arduino", "android"]
+  targets = ["rocm", "bash", "arduino", "android", "web"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
@@ -171,5 +182,16 @@ target "android" {
     ANDROID_PLATFORM      = ANDROID_PLATFORM
     ANDROID_BUILD_TOOLS   = ANDROID_BUILD_TOOLS
     GRADLE_VERSION        = GRADLE_VERSION
+  }
+}
+
+target "web" {
+  inherits = ["_common"]
+  target   = "web"
+  tags     = ["${IMAGE_REPO}:web"]
+  args = {
+    BASE_IMAGE         = UBUNTU_IMAGE
+    NODE_VERSION       = NODE_VERSION
+    PLAYWRIGHT_VERSION = PLAYWRIGHT_VERSION
   }
 }
