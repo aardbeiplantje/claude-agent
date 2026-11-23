@@ -23,6 +23,10 @@
 #   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
 #   ./run.sh --no-bluetooth     don't
 #   ./run.sh --port 5173        publish a container port on the host (127.0.0.1), repeatable
+#   ./run.sh --restart unless-stopped   keep it across reboots: detached (-d), no --rm
+#                                       (policies: no, always, unless-stopped, on-failure)
+#   ./run.sh --force            replace the existing container of this project (any flavor)
+#                               with the one started now; ~/.claude and the workspace stay
 #
 #
 # Serial: access to every ttyUSB* (major 188) and ttyACM* (major 166) is
@@ -55,7 +59,7 @@
 #   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino|android|web>)
 #   PORTS          container ports to publish on 127.0.0.1, space-separated
 #                  (default: none; e.g. PORTS="5173 8080" for a dev server)
-#   NAME           container name                    (default: claude-agent-<flavor>-<workspace>)
+#   NAME           container name                    (default: claude-agent-<workspace>)
 #   CLAUDE_VOLUME  volume (or absolute host path) for ~/.claude: login,
 #                  settings, permissions             (default: claude-agent-claude, shared)
 #   SSH_AGENT      1 shares $SSH_AUTH_SOCK, 0 doesn't (default: 1)
@@ -86,6 +90,8 @@ rtlsdr_ids=${RTLSDR_IDS:-"0bda:2838 0bda:2832"}   # RTL2832U: NESDR SMArt (2838)
 nrf_sniffer=${NRF_SNIFFER:-0}
 nrf_ids=${NRF_IDS:-"1915:521f 1915:522a"}         # Nordic nRF52840 Dongle: DFU bootloader, sniffer firmware
 bluetooth=${BLUETOOTH:-}
+restart=no
+force=0
 refresh=()
 ports=()
 read -ra ports_env <<<"${PORTS:-}"
@@ -112,10 +118,17 @@ while [ $# -gt 0 ]; do
         --bluetooth)    bluetooth=1 ;;
         --no-bluetooth) bluetooth=0 ;;
         --port)         shift; ports+=("$1") ;;
+        --restart)      shift; restart=${1:-} ;;
+        --force)        force=1 ;;
         *) break ;;
     esac
     shift
 done
+
+case "$restart" in
+    no|always|unless-stopped|on-failure|on-failure:*) ;;
+    *) echo "run.sh: bad --restart policy: '$restart' (no, always, unless-stopped, on-failure)" >&2; exit 2 ;;
+esac
 
 IMAGE_REPO=${IMAGE_REPO:-claude-agent}
 IMAGE=${IMAGE:-$IMAGE_REPO:$flavor}
@@ -134,7 +147,7 @@ fi
 # ~/rocm-hip.git -> /work/rocm-hip
 ws_name=$(basename "$WORKSPACE")
 ws_name=${ws_name%.git}
-NAME=${NAME:-claude-agent-$flavor-$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")}
+NAME=${NAME:-claude-agent-$(tr -c 'a-zA-Z0-9_.\n-' '-' <<<"$ws_name")}
 container_home=/home/$AGENT_USER
 container_ws=/work/$ws_name
 
@@ -160,9 +173,25 @@ if [ "$build" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     )
 fi
 
+# One container per project (NAME), whatever its flavor. If one exists, docker
+# would refuse the new one: --force replaces it (stop + rm), otherwise say how
+# to start the existing one. ~/.claude and the workspace are not touched.
+if docker container inspect "$NAME" >/dev/null 2>&1; then
+    if [ "$force" = 1 ]; then
+        old=$(docker container inspect -f '{{.Config.Image}}' "$NAME")
+        docker rm -f "$NAME" >/dev/null
+        echo "run.sh: replaced container $NAME ($old) with $IMAGE" >&2
+    else
+        state=$(docker container inspect -f '{{.State.Status}}, image {{.Config.Image}}' "$NAME")
+        echo "run.sh: container $NAME already exists ($state)." >&2
+        echo "  start it:          docker start $NAME   (attach: docker attach $NAME)" >&2
+        echo "  replace it with $IMAGE: add --force" >&2
+        exit 1
+    fi
+fi
+
 # shellcheck disable=SC2054  # commas in --tmpfs options are intentional
 args=(
-    --rm
     --init
     --name "$NAME"
     --hostname "$NAME"
@@ -293,7 +322,24 @@ for p in "${ports[@]}"; do
     args+=(-p "127.0.0.1:$p:$p")
 done
 
+# --restart POLICY keeps the container across reboots; it runs detached (-d).
+if [ "$restart" != no ]; then
+    args+=(-d --restart="$restart")
+fi
+
 # shellcheck disable=SC2206
-[ -n "${DOCKER_ARGS:-}" ] && args+=($DOCKER_ARGS)
+extra=(${DOCKER_ARGS:-})
+args+=("${extra[@]}")
+
+# Without a restart policy the container is removed when it exits (--rm), since
+# docker refuses --rm together with --restart. A --restart in DOCKER_ARGS counts too.
+policy=$restart
+for ((i = 0; i < ${#extra[@]}; i++)); do
+    case "${extra[i]}" in
+        --restart=*) policy=${extra[i]#--restart=} ;;
+        --restart)   policy=${extra[i+1]:-no} ;;
+    esac
+done
+[ "$policy" = no ] && args=(--rm "${args[@]}")
 
 exec docker run "${args[@]}" "$IMAGE" "$@"
