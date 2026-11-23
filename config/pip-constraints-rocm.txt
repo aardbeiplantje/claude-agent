@@ -1,0 +1,10 @@
+# pip constraints for the rocm image (PIP_CONSTRAINT). The ROCm builds of these
+# are the only ones allowed: PyPI's torch (2.15 and later) pulls nvidia-* and
+# cuda-toolkit, and its triton is NVIDIA's. With these pins a package that asks
+# for another build fails to resolve instead of swapping in a CUDA one. Keep in
+# step with TORCH_VERSION, TORCHVISION_VERSION and TORCHAUDIO_VERSION in the
+# Dockerfile. triton is the one torch 2.9.1 needs (ROCm 7.13 nightly index).
+torch==2.9.1+rocm7.13.0a20260513
+torchvision==0.24.0+rocm7.13.0a20260513
+torchaudio==2.9.0+rocm7.13.0a20260513
+triton==3.5.1+rocm7.13.0a20260513

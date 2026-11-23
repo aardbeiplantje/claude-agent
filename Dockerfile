@@ -1,8 +1,10 @@
-# Three final targets share one "base" stage:
+# The final targets share one "base" stage:
 #
 #   rocm     ROCm dev image + Rust (rustup) + Python venv (torch from TheRock) + Claude Code
 #            (BASE_IMAGE=rocm/dev-ubuntu-24.04)
-#   bash     plain Ubuntu + the general dev tools in base + Rust (rustup), no GPU/board extras
+#   bash     basic: the general dev tools in base + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#   dev      full dev: base + Rust (rustup), Node.js, Go, rtl-sdr + Claude Code
+#            (BASE_IMAGE=ubuntu:24.04)
 #   arduino  Ubuntu + arduino-cli + ESP32 core + usb_logger (USB power meters)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #   android  Ubuntu + JDK 17 + Android SDK (platform, build-tools, platform-tools)
@@ -90,7 +92,7 @@ CMD []
 FROM base AS rocm
 
 # Rust (rustc, cargo, clippy, rustfmt) via rustup, for the user, stable channel.
-# Same as in the bash target.
+# Same as in the dev target.
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain stable \
  && "${HOME}/.cargo/bin/cargo" --version
 ENV PATH=${HOME}/.cargo/bin:${PATH}
@@ -122,6 +124,10 @@ RUN python3 -m venv "${HOME}/venv" \
 ENV PATH=${HOME}/venv/bin:${PATH} \
     PIP_RETRIES=10 \
     PIP_TIMEOUT=300
+# ROCm builds only: any later pip install that asks for torch or triton gets
+# the constraint versions above, never PyPI's CUDA builds (see the file).
+COPY config/pip-constraints-rocm.txt /etc/pip-constraints-rocm.txt
+ENV PIP_CONSTRAINT=/etc/pip-constraints-rocm.txt
 # torch, torchvision, torchaudio and numpy (torch's own deps come from the same index)
 RUN --mount=type=cache,target=/var/cache/pip-rocm,uid=${UID},gid=${GID} \
     PIP_CACHE_DIR=/var/cache/pip-rocm \
@@ -134,8 +140,27 @@ RUN --mount=type=cache,target=/var/cache/pip-rocm,uid=${UID},gid=${GID} \
  && pip install "numpy==${NUMPY_VERSION}" "pyarrow==${PYARROW_VERSION}" \
         "soundfile==${SOUNDFILE_VERSION}" "pillow==${PILLOW_VERSION}" \
         "transformers==${TRANSFORMERS_VERSION}"
+# Diffusion, training and notebook helpers, from PyPI. Pins are the latest that
+# work with torch 2.9.1, transformers 5.5.1 and numpy 1.26: huggingface_hub must
+# be 1.32 or newer for diffusers, and 2.x is out of range for transformers.
+# datasets is not in here: 5.x needs pyarrow 24, and pyarrow stays at 17.
+ARG HUGGINGFACE_HUB_VERSION=1.33.0
+ARG SAFETENSORS_VERSION=0.8.0
+ARG DIFFUSERS_VERSION=0.43.0
+ARG ACCELERATE_VERSION=1.16.0
+ARG MATPLOTLIB_VERSION=3.11.2
+ARG TENSORBOARD_VERSION=2.21.0
+ARG KAGGLEHUB_VERSION=1.0.3
+ARG PYBIND11_VERSION=3.1.0
+RUN --mount=type=cache,target=/var/cache/pip-rocm,uid=${UID},gid=${GID} \
+    PIP_CACHE_DIR=/var/cache/pip-rocm \
+ && pip install "huggingface_hub==${HUGGINGFACE_HUB_VERSION}" "safetensors==${SAFETENSORS_VERSION}" \
+        "diffusers==${DIFFUSERS_VERSION}" "accelerate==${ACCELERATE_VERSION}" \
+        "matplotlib==${MATPLOTLIB_VERSION}" "tensorboard==${TENSORBOARD_VERSION}" \
+        "kagglehub==${KAGGLEHUB_VERSION}" "pybind11==${PYBIND11_VERSION}"
 # Check that the stack imports (no GPU is needed for that)
-RUN python -c "import numpy, pyarrow, soundfile, PIL, transformers, torch, torchvision, torchaudio; print('torch', torch.__version__, 'hip', torch.version.hip, '| transformers', transformers.__version__, '| pyarrow', pyarrow.__version__)"
+RUN python -c "import numpy, pyarrow, soundfile, PIL, transformers, torch, torchvision, torchaudio, diffusers, accelerate, matplotlib, kagglehub; print('torch', torch.__version__, 'hip', torch.version.hip, '| transformers', transformers.__version__, '| diffusers', diffusers.__version__, '| pyarrow', pyarrow.__version__)" \
+ && pip check
 
 # Claude Code, installed for the user (lands in ~/.local/bin). Kept last so
 # changing CLAUDE_REFRESH ("run.sh --update") only rebuilds this layer.
@@ -154,9 +179,23 @@ WORKDIR ${HOME}/work
 # --------------------------------------------------------------------------
 FROM base AS bash
 
-# General-purpose: python, perl, lua/luajit, C/C++ (gcc, clang, cmake, ninja)
-# come from base.
-# Node.js (+ npm) and Go from Ubuntu's apt. ARGs don't carry across stages,
+# Basic: the general dev tools from base (python, perl, lua, C/C++, cmake, ...)
+# and Claude Code. Rust, Node.js, Go and rtl-sdr are in the dev target.
+ARG CLAUDE_REFRESH=0
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
+COPY config/claude-code/ /etc/claude-code/
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS dev
+
+# Full dev image: base + Node.js (+ npm) and Go and rtl-sdr from Ubuntu's apt,
+# Rust (rustup), Claude Code.
+# ARGs don't carry across stages,
 # hence USERNAME again (same default as in base).
 ARG USERNAME=agent
 USER root

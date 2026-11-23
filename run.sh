@@ -3,7 +3,8 @@
 # Run Claude Code in one of the claude-agent containers.
 #
 #   ./run.sh                    claude in the ROCm image, in the current directory
-#   ./run.sh --bash             claude in the general dev image (python, perl, C/C++, Rust)
+#   ./run.sh --bash             claude in the basic image (general dev tools, Claude Code)
+#   ./run.sh --dev              claude in the full dev image (+ Rust, Node.js, Go, rtl-sdr)
 #   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
 #   ./run.sh --android          claude in the Android SDK/Gradle image
 #   ./run.sh --web              claude in the web image (Node.js, Playwright + Firefox)
@@ -20,7 +21,7 @@
 #   ./run.sh --no-rtlsdr        don't (default)
 #   ./run.sh --nrf-sniffer      allow nRF52840 dongles for flashing/sniffing (implies --usb)
 #   ./run.sh --no-nrf-sniffer   don't (default)
-#   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --bash/--arduino)
+#   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --dev/--arduino)
 #   ./run.sh --no-bluetooth     don't
 #   ./run.sh --port 5173        publish a container port on the host (127.0.0.1), repeatable
 #   ./run.sh --restart unless-stopped   keep it across reboots: detached (-d), no --rm
@@ -49,14 +50,14 @@
 # HCI socket, and seccomp=unconfined in case Docker's default profile blocks
 # AF_BLUETOOTH. Keep bluetoothd running on the host. Opt-out with --no-bluetooth.
 #
-# run.sh options (--rocm/--bash/--arduino/--android/--web, --build/--update,
+# run.sh options (--rocm/--bash/--dev/--arduino/--android/--web, --build/--update,
 # --[no-]ssh-agent, --[no-]serial, --[no-]usb, --[no-]bluetooth) come first, in any order.
 # "docker buildx bake" on its own builds all images.
 #
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
-#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|arduino|android|web>)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|dev|arduino|android|web>)
 #   PORTS          container ports to publish on 127.0.0.1, space-separated
 #                  (default: none; e.g. PORTS="5173 8080" for a dev server)
 #   NAME           container name                    (default: claude-agent-<workspace>)
@@ -71,7 +72,7 @@
 #   RTLSDR_IDS     RTL-SDR vid:pid list          (default: "0bda:2838 0bda:2832")
 #   NRF_SNIFFER    1 allows nRF52840 dongles, 0 doesn't (default: 0)
 #   NRF_IDS        nRF52840 vid:pid list         (default: "1915:521f 1915:522a", the Nordic DFU bootloader and the running sniffer)
-#   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for bash/arduino, 0 otherwise)
+#   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for dev/arduino, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
@@ -100,6 +101,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --rocm)    flavor=rocm ;;
         --bash)    flavor=bash ;;
+        --dev)     flavor=dev ;;
         --arduino) flavor=arduino ;;
         --android) flavor=android ;;
         --web)     flavor=web ;;
@@ -141,7 +143,7 @@ if [ -z "$serial" ]; then
     [ "$flavor" = arduino ] && serial=1 || serial=0
 fi
 if [ -z "$bluetooth" ]; then
-    { [ "$flavor" = bash ] || [ "$flavor" = arduino ]; } && bluetooth=1 || bluetooth=0
+    { [ "$flavor" = dev ] || [ "$flavor" = arduino ]; } && bluetooth=1 || bluetooth=0
 fi
 
 # ~/rocm-hip.git -> /work/rocm-hip

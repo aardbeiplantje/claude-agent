@@ -4,13 +4,14 @@ Claude Code in a container, in independent images built from one Dockerfile:
 
 | Image                  | Base                           | Adds                                   |
 |------------------------|--------------------------------|-----------------------------------------|
-| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Rust (rustup), Python venv `~/venv` (torch/torchvision/torchaudio ROCm wheels from TheRock, transformers, pyarrow, soundfile, Pillow, numpy), Claude Code |
-| `claude-agent:bash`    | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, Claude Code |
+| `claude-agent:rocm`    | `rocm/dev-ubuntu-24.04:latest` | Rust (rustup), Python venv `~/venv` (torch/torchvision/torchaudio ROCm wheels from TheRock, pinned by `config/pip-constraints-rocm.txt` so no CUDA build can replace them; transformers, diffusers, accelerate, matplotlib, tensorboard, kagglehub, pybind11, pyarrow, soundfile, Pillow, numpy), Claude Code |
+| `claude-agent:bash`    | `ubuntu:24.04`                 | Claude Code (basic: the general dev tools only) |
+| `claude-agent:dev`     | `ubuntu:24.04`                 | Rust (rustup), Node.js, Go, rtl-sdr, Claude Code |
 | `claude-agent:arduino` | `ubuntu:24.04`                 | arduino-cli, ESP32 core, usb_logger, Claude Code |
 | `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
 | `claude-agent:web`     | `ubuntu:24.04`                 | Node.js LTS (npm), Playwright with Firefox, fonts, Claude Code |
 
-None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `rocm` and `bash` images also have Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), and the `bash` image has Node.js/npm and Go (Ubuntu packages). Both run as a non-root user that matches your host
+None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `rocm` and `dev` images also have Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), and the `dev` image has Node.js/npm, Go and rtl-sdr (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
 
 ## Usage
@@ -18,14 +19,15 @@ UID/GID, so files they write in your workspace stay yours.
 ```sh
 cd ~/rocm-hip.git
 ~/claude-agent/run.sh             # claude in the ROCm image (builds it on first run)
-~/claude-agent/run.sh --bash      # claude in the general dev image, no GPU or board extras
+~/claude-agent/run.sh --bash      # claude in the basic image (general dev tools, no Rust/Node/Go)
+~/claude-agent/run.sh --dev       # claude in the full dev image (Rust, Node.js, Go, rtl-sdr)
 ~/claude-agent/run.sh --arduino   # claude in the arduino image
 ~/claude-agent/run.sh --android   # claude in the android image
 ~/claude-agent/run.sh --web       # claude in the web image (Node.js, Playwright + Firefox)
 ```
 
 - The current directory is mounted at `/work/<dirname>` (a trailing `.git` is dropped).
-- `--rocm` (default), `--bash`, `--arduino`, `--android` or `--web` selects the image.
+- `--rocm` (default), `--bash`, `--dev`, `--arduino`, `--android` or `--web` selects the image.
 - `--build` rebuilds the selected image, reusing the build cache.
 - `--update` pulls a fresh base image and reinstalls the latest Claude Code. If the base didn't change, only the Claude Code layer is rebuilt.
 - After those options, arguments starting with `-` go to `claude` (`./run.sh --continue`). Anything else runs as a command (`./run.sh --arduino bash`).
@@ -72,7 +74,7 @@ docker buildx bake --builder default
 - **ROCm image:** `/dev/kfd` and `/dev/dri/*` are passed through, and the groups that own them on your host are added automatically. It keeps the ROCm flags from the old `docker run`: `--ipc=host`, unconfined seccomp, unlimited memlock and a large stack.
 - **Serial boards** (default for `--arduino`, opt-in with `--serial` for ROCm): a device cgroup rule allows all `ttyUSB*` (major 188) and `ttyACM*` (major 166) devices, and the entrypoint creates `/dev/ttyUSB0..7` and `/dev/ttyACM0..7` (group `dialout`) inside the container. Boards plugged in, or renumbered after a reset, while the container runs work without a restart. Nothing from the host's `/dev` is mounted. The nodes always exist, so use `arduino-cli board list` (which reads `/sys`) to see what's actually connected. A node with no board behind it fails to open with "No such device or address". `/dev/serial/by-id` doesn't exist (no udev). Turn it off with `--no-serial` or `SERIAL=0`.
 - **USB power meters** (opt-in with `--usb` or `USB=1`, any image): a device cgroup rule allows USB char major 189, and the entrypoint mknods `/dev/bus/usb/<bus>/<dev>` for each supported meter, owned by the container's `dialout` group, the same way it makes the serial nodes. Nothing from the host's `/dev` is mounted. A meter replugged while the container runs needs `usb-meter-nodes` run again. The rule lets the container open every USB device on the host, which is why it's opt-in. See [USB power meters](#usb-power-meters-jt-um120-fnirsi).
-- **RTL-SDR dongles** (opt-in with `--rtlsdr` or `RTLSDR=1`, any image; the tools are installed in `--bash` and `--arduino`): this implies `--usb`, and adds the RTL2832U IDs (`0bda:2838` NESDR SMArt, `0bda:2832` NESDR) to the list `usb-meter-nodes` creates nodes for. Use `rtl_test` or `rtl_sdr` in the container to check it. The host's `dvb_usb_rtl28xxu` kernel driver may claim the dongle first; librtlsdr detaches it from inside the container, and if that fails, blacklist the module on the host with `/etc/modprobe.d/rtlsdr.conf` (`blacklist dvb_usb_rtl28xxu`). Override the IDs with `RTLSDR_IDS="vid:pid ..."`.
+- **RTL-SDR dongles** (opt-in with `--rtlsdr` or `RTLSDR=1`, any image; the tools are installed in `--dev` and `--arduino`): this implies `--usb`, and adds the RTL2832U IDs (`0bda:2838` NESDR SMArt, `0bda:2832` NESDR) to the list `usb-meter-nodes` creates nodes for. Use `rtl_test` or `rtl_sdr` in the container to check it. The host's `dvb_usb_rtl28xxu` kernel driver may claim the dongle first; librtlsdr detaches it from inside the container, and if that fails, blacklist the module on the host with `/etc/modprobe.d/rtlsdr.conf` (`blacklist dvb_usb_rtl28xxu`). Override the IDs with `RTLSDR_IDS="vid:pid ..."`.
 - **nRF52840 sniffer dongle** (opt-in with `--nrf-sniffer` or `NRF_SNIFFER=1`, arduino image): implies `--usb`, and adds the Nordic dongle IDs `1915:521f` (DFU bootloader) and `1915:522a` (running sniffer firmware) to the list `usb-meter-nodes` creates nodes for. The arduino image has Nordic's `nrfutil` (pinned by sha256, then self-upgraded to the latest release) in `~/.local/bin`, with the `device` (2.17.5) command and the latest `ble-sniffer` command, installed at build time. The sniffer firmware (4.1.1) comes with `ble-sniffer`, under `~/.nrfutil/share/nrfutil-ble-sniffer/firmware/` in the container. Once it runs, the dongle appears as `/dev/ttyACM*`, which `--serial` already allows. Override the bootloader ID with `NRF_IDS="vid:pid ..."`.
 
   The dongle already runs the sniffer firmware (it enumerates as `1915:522a`), so flashing is only needed to re-flash it. If you do, it needs the bootloader ID `1915:521f` visible:
@@ -102,9 +104,9 @@ The user has passwordless `sudo` inside the containers.
 |-----------------|-----------------------------------------|
 | `WORKSPACE`     | `$PWD`                                  |
 | `IMAGE_REPO`    | `claude-agent`                          |
-| `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:arduino`, `:android`, `:web` |
+| `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:dev`, `:arduino`, `:android`, `:web` |
 | `PORTS`         | none (space-separated ports to publish on `127.0.0.1`; `--port N` does one) |
-| `NAME`          | `claude-agent-<flavor>-<workspace>`     |
+| `NAME`          | `claude-agent-<workspace>`              |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |
 | `AGENT_USER`    | `agent`                                 |
 | `SSH_AGENT`     | `1` (share `$SSH_AUTH_SOCK`)            |

@@ -2,7 +2,8 @@
 #
 #   docker buildx bake                 build all images into the local image store
 #   docker buildx bake rocm            only claude-agent:rocm
-#   docker buildx bake bash            only claude-agent:bash
+#   docker buildx bake bash            only claude-agent:bash (basic)
+#   docker buildx bake dev             only claude-agent:dev (full dev: Rust, Node.js, Go, rtl-sdr)
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake android         only claude-agent:android
 #   docker buildx bake web             only claude-agent:web
@@ -117,7 +118,7 @@ group "default" {
 
 # Everything, loaded into the local image store
 group "local" {
-  targets = ["rocm", "bash", "arduino", "android", "web"]
+  targets = ["rocm", "bash", "dev", "arduino", "android", "web"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
@@ -153,6 +154,15 @@ target "bash" {
   inherits = ["_common"]
   target   = "bash"
   tags     = ["${IMAGE_REPO}:bash"]
+  args = {
+    BASE_IMAGE = UBUNTU_IMAGE
+  }
+}
+
+target "dev" {
+  inherits = ["_common"]
+  target   = "dev"
+  tags     = ["${IMAGE_REPO}:dev"]
   args = {
     BASE_IMAGE = UBUNTU_IMAGE
   }
