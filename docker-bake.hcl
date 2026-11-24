@@ -7,7 +7,7 @@
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake android         only claude-agent:android
 #   docker buildx bake web             only claude-agent:web
-#   IMAGE_PLATFORM=linux/arm64 docker buildx bake   the arm64 set (default linux/amd64)
+#   DOCKER_PLATFORM=linux/arm64 docker buildx bake   the arm64 set (default linux/amd64)
 #   docker buildx bake --print         show the resolved configuration
 #
 # Refresh: pull fresh base images and reinstall Claude Code (only the Claude
@@ -26,7 +26,7 @@ variable "IMAGE_REPO" {
 # Image platform: linux/amd64 (default) or linux/arm64. run.sh sets it to the
 # host's architecture. rocm and android are amd64 only, so they are not built
 # for arm64.
-variable "IMAGE_PLATFORM" {
+variable "DOCKER_PLATFORM" {
   default = "linux/amd64"
 }
 
@@ -127,14 +127,14 @@ group "default" {
 # Everything for the platform, loaded into the local image store. On arm64 the
 # amd64-only images (rocm, android) are left out.
 group "local" {
-  targets = IMAGE_PLATFORM == "linux/arm64" ? ["bash", "dev", "arduino", "web"] : ["rocm", "bash", "dev", "arduino", "android", "web"]
+  targets = DOCKER_PLATFORM == "linux/arm64" ? ["bash", "dev", "arduino", "web"] : ["rocm", "bash", "dev", "arduino", "android", "web"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
-  platforms  = [IMAGE_PLATFORM]
+  platforms  = [DOCKER_PLATFORM]
   args = {
     USERNAME = AGENT_USER
     UID      = AGENT_UID

@@ -58,7 +58,7 @@
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
 #   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|dev|arduino|android|web>)
-#   IMAGE_PLATFORM linux/amd64 or linux/arm64        (default: this host's; rocm and android are amd64 only)
+#   DOCKER_PLATFORM linux/amd64 or linux/arm64        (default: this host's; rocm and android are amd64 only)
 #   PORTS          container ports to publish on 127.0.0.1, space-separated
 #                  (default: none; e.g. PORTS="5173 8080" for a dev server)
 #   NAME           container name                    (default: claude-agent-<workspace>)
@@ -139,19 +139,19 @@ WORKSPACE=$(readlink -f "${WORKSPACE:-$PWD}")
 CLAUDE_VOLUME=${CLAUDE_VOLUME:-claude-agent-claude}
 AGENT_USER=${AGENT_USER:-agent}
 BUILDER=${BUILDER:-}
-# Build for this host's architecture (amd64 is the bake default). IMAGE_PLATFORM
+# Build for this host's architecture (amd64 is the bake default). DOCKER_PLATFORM
 # overrides it; linux/arm64 on an amd64 host needs binfmt/qemu and is slow.
 case "$(uname -m)" in
     x86_64|amd64)  host_arch=amd64 ;;
     aarch64|arm64) host_arch=arm64 ;;
     *) echo "run.sh: unsupported host architecture: $(uname -m)" >&2; exit 2 ;;
 esac
-IMAGE_PLATFORM=${IMAGE_PLATFORM:-linux/$host_arch}
-case "$IMAGE_PLATFORM" in
+DOCKER_PLATFORM=${DOCKER_PLATFORM:-linux/$host_arch}
+case "$DOCKER_PLATFORM" in
     linux/amd64|linux/arm64) ;;
-    *) echo "run.sh: bad IMAGE_PLATFORM: $IMAGE_PLATFORM (linux/amd64 or linux/arm64)" >&2; exit 2 ;;
+    *) echo "run.sh: bad DOCKER_PLATFORM: $DOCKER_PLATFORM (linux/amd64 or linux/arm64)" >&2; exit 2 ;;
 esac
-arch=${IMAGE_PLATFORM#linux/}
+arch=${DOCKER_PLATFORM#linux/}
 if [ "$arch" = arm64 ]; then
     case "$flavor" in
         rocm|android) echo "run.sh: $flavor is amd64 only; there is no arm64 build" >&2; exit 2 ;;
@@ -188,7 +188,7 @@ if [ "$build" = 1 ] || [ "$have_arch" != "$arch" ]; then
     [ ${#refresh[@]} -gt 0 ] && claude_refresh=$(date +%s) && nrfutil_refresh=$claude_refresh
     (
         cd "$here"
-        IMAGE_REPO=$IMAGE_REPO AGENT_USER=$AGENT_USER IMAGE_PLATFORM=$IMAGE_PLATFORM \
+        IMAGE_REPO=$IMAGE_REPO AGENT_USER=$AGENT_USER DOCKER_PLATFORM=$DOCKER_PLATFORM \
         AGENT_UID=$uid AGENT_GID=$gid CLAUDE_REFRESH=$claude_refresh \
         NRFUTIL_REFRESH=$nrfutil_refresh \
             docker buildx bake ${BUILDER:+--builder "$BUILDER"} "${refresh[@]}" \
