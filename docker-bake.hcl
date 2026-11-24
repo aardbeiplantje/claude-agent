@@ -7,6 +7,7 @@
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake android         only claude-agent:android
 #   docker buildx bake web             only claude-agent:web
+#   IMAGE_PLATFORM=linux/arm64 docker buildx bake   the arm64 set (default linux/amd64)
 #   docker buildx bake --print         show the resolved configuration
 #
 # Refresh: pull fresh base images and reinstall Claude Code (only the Claude
@@ -20,6 +21,13 @@
 
 variable "IMAGE_REPO" {
   default = "claude-agent"
+}
+
+# Image platform: linux/amd64 (default) or linux/arm64. run.sh sets it to the
+# host's architecture. rocm and android are amd64 only, so they are not built
+# for arm64.
+variable "IMAGE_PLATFORM" {
+  default = "linux/amd64"
 }
 
 variable "ROCM_IMAGE" {
@@ -116,16 +124,17 @@ group "default" {
   targets = ["local"]
 }
 
-# Everything, loaded into the local image store
+# Everything for the platform, loaded into the local image store. On arm64 the
+# amd64-only images (rocm, android) are left out.
 group "local" {
-  targets = ["rocm", "bash", "dev", "arduino", "android", "web"]
+  targets = IMAGE_PLATFORM == "linux/arm64" ? ["bash", "dev", "arduino", "web"] : ["rocm", "bash", "dev", "arduino", "android", "web"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
-  platforms  = ["linux/amd64"]
+  platforms  = [IMAGE_PLATFORM]
   args = {
     USERNAME = AGENT_USER
     UID      = AGENT_UID
@@ -140,6 +149,7 @@ target "_common" {
 target "rocm" {
   inherits = ["_common"]
   target   = "rocm"
+  platforms = ["linux/amd64"]
   tags     = ["${IMAGE_REPO}:rocm"]
   args = {
     BASE_IMAGE          = ROCM_IMAGE
@@ -185,6 +195,7 @@ target "arduino" {
 target "android" {
   inherits = ["_common"]
   target   = "android"
+  platforms = ["linux/amd64"]
   tags     = ["${IMAGE_REPO}:android"]
   args = {
     BASE_IMAGE            = UBUNTU_IMAGE

@@ -11,6 +11,8 @@ Claude Code in a container, in independent images built from one Dockerfile:
 | `claude-agent:android` | `ubuntu:24.04`                 | JDK 17, Android SDK (platform, build-tools, adb), Gradle, Claude Code |
 | `claude-agent:web`     | `ubuntu:24.04`                 | Node.js LTS (npm), Playwright with Firefox, fonts, Claude Code |
 
+Platforms: `rocm` and `android` are amd64 only. `bash`, `dev`, `arduino` and `web` build for amd64 and arm64. A build uses the host's architecture (`IMAGE_PLATFORM` overrides it), so an arm64 machine builds only arm64 images and an amd64 machine only amd64 ones.
+
 None depends on the others. All include python3 (pip, venv, pipx, `python` alias), perl, lua 5.4 / luajit (luarocks), gcc/g++, clang (clang-format, clang-tidy, lld), cmake, ninja, make, autotools, ccache, bear, gdb, valgrind, strace, common -dev libraries (openssl, zlib, ffi, sqlite), ripgrep, fd, shellcheck, shfmt, git-lfs and basic network tools. The `rocm` and `dev` images also have Rust (`rustc`, `cargo`, `clippy`, `rustfmt`, stable via rustup), and the `dev` image has Node.js/npm, Go and rtl-sdr (Ubuntu packages). Both run as a non-root user that matches your host
 UID/GID, so files they write in your workspace stay yours.
 
@@ -41,10 +43,11 @@ export AGENT_UID=$(id -u) AGENT_GID=$(id -g)
 docker buildx bake                                   # all images ("local" group), into your local images
 docker buildx bake rocm                              # just one
 CLAUDE_REFRESH=$(date +%s) docker buildx bake --pull # fresh bases + latest Claude Code
+IMAGE_PLATFORM=linux/arm64 docker buildx bake bash dev arduino web   # arm64 set (on an arm64 host, export it in your shell profile; plain bake defaults to amd64)
 docker buildx bake --print                           # show the resolved config
 ```
 
-Overridable variables: `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
+Overridable variables: `IMAGE_PLATFORM` (`linux/amd64` in bake; `run.sh` uses the host's), `IMAGE_REPO`, `ROCM_IMAGE`, `UBUNTU_IMAGE`, `AGENT_USER`,
 `AGENT_UID`, `AGENT_GID`, `CLAUDE_REFRESH`, `ARDUINO_CLI_VERSION`, `ARDUINO_BOARD_URLS`,
 `TORCH_INDEX`, `TORCH_VERSION`, `TORCHVISION_VERSION` and `TORCHAUDIO_VERSION` (the rocm
 image's torch wheels; the index is per GPU family, e.g. `.../v2/gfx110X-all/`),
@@ -105,6 +108,7 @@ The user has passwordless `sudo` inside the containers.
 | `WORKSPACE`     | `$PWD`                                  |
 | `IMAGE_REPO`    | `claude-agent`                          |
 | `IMAGE`         | `$IMAGE_REPO:rocm`, `:bash`, `:dev`, `:arduino`, `:android`, `:web` |
+| `IMAGE_PLATFORM` | this host's `linux/amd64` or `linux/arm64` (`rocm` and `android` refuse arm64) |
 | `PORTS`         | none (space-separated ports to publish on `127.0.0.1`; `--port N` does one) |
 | `NAME`          | `claude-agent-<workspace>`              |
 | `CLAUDE_VOLUME` | `claude-agent-claude`                   |

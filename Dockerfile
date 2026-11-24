@@ -1,4 +1,5 @@
-# The final targets share one "base" stage:
+# The final targets share one "base" stage. bash, dev, arduino and web build for
+# linux/amd64 and linux/arm64 (TARGETARCH); rocm and android are amd64 only.
 #
 #   rocm     ROCm dev image + Rust (rustup) + Python venv (torch from TheRock) + Claude Code
 #            (BASE_IMAGE=rocm/dev-ubuntu-24.04)
@@ -231,11 +232,14 @@ ARG ARDUINO_CLI_VERSION=1.5.1
 ARG ARDUINO_BOARD_URLS="https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 ARG ARDUINO_CORES="esp32:esp32"
 
-# arduino-cli from the official GitHub release
-RUN mkdir -p "${HOME}/.local/bin" \
- && curl -fsSL "https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
-      | tar -xz -C "${HOME}/.local/bin" arduino-cli \
- && arduino-cli version
+# arduino-cli from the official GitHub release (asset name per architecture)
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH}" in amd64) acli_os=Linux_64bit ;; arm64) acli_os=Linux_ARM64 ;; *) echo "unsupported: ${TARGETARCH}" >&2; exit 1 ;; esac; \
+    mkdir -p "${HOME}/.local/bin"; \
+    curl -fsSL "https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_${acli_os}.tar.gz" \
+      | tar -xz -C "${HOME}/.local/bin" arduino-cli; \
+    arduino-cli version
 
 # Board cores (ESP32 by default)
 RUN arduino-cli config init \
@@ -267,14 +271,18 @@ RUN pipx install "usb-multimeter==${USB_METER_VERSION}" \
 # reads the sniffer's serial output (nrfutil ble-sniffer sniff --port ...).
 ARG NRFUTIL_URL="https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/x86_64-unknown-linux-gnu/nrfutil-x86_64-unknown-linux-gnu-1.4.2-8a9090a"
 ARG NRFUTIL_SHA256=a14996288928a92081cadeefd2dd37fcb54ee99a568fd4eaa6fb9586a51fba57
+ARG NRFUTIL_URL_ARM64="https://files.nordicsemi.com/artifactory/swtools/external/nrfutil/executables/aarch64-unknown-linux-gnu/nrfutil-aarch64-unknown-linux-gnu-1.4.2-8a9090a"
+ARG NRFUTIL_SHA256_ARM64=4850783fb494b9ef27a18347fad5376ad8c5506f93cb0da1e3908f9011672664
 ARG NRFUTIL_DEVICE=device=2.17.5
 # Changing NRFUTIL_REFRESH ("run.sh --update") re-runs self-upgrade and the
 # latest ble-sniffer install; otherwise this layer stays cached.
 ARG NRFUTIL_REFRESH=0
 RUN echo "nrfutil refresh: ${NRFUTIL_REFRESH}" \
  && mkdir -p "${HOME}/.local/bin" \
- && curl -fsSL -o "${HOME}/.local/bin/nrfutil" "${NRFUTIL_URL}" \
- && echo "${NRFUTIL_SHA256}  ${HOME}/.local/bin/nrfutil" | sha256sum -c - \
+ && if [ "${TARGETARCH}" = arm64 ]; then nrf_url="${NRFUTIL_URL_ARM64}"; nrf_sha="${NRFUTIL_SHA256_ARM64}"; \
+    else nrf_url="${NRFUTIL_URL}"; nrf_sha="${NRFUTIL_SHA256}"; fi \
+ && curl -fsSL -o "${HOME}/.local/bin/nrfutil" "${nrf_url}" \
+ && echo "${nrf_sha}  ${HOME}/.local/bin/nrfutil" | sha256sum -c - \
  && chmod 0755 "${HOME}/.local/bin/nrfutil" \
  && nrfutil self-upgrade \
  && nrfutil install "${NRFUTIL_DEVICE}" \
@@ -374,16 +382,19 @@ RUN apt-get update \
         fonts-noto-core fonts-noto-color-emoji fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 
+ARG TARGETARCH
 # Node.js (npm included) into /usr/local, checked against the sha256 list that
-# nodejs.org publishes for this version.
+# nodejs.org publishes for this version. One tarball per architecture.
 RUN set -eux; \
     cd /tmp; \
+    case "${TARGETARCH}" in amd64) node_arch=x64 ;; arm64) node_arch=arm64 ;; *) echo "unsupported: ${TARGETARCH}" >&2; exit 1 ;; esac; \
     base="https://nodejs.org/dist/v${NODE_VERSION}"; \
-    curl -fsSLO "${base}/node-v${NODE_VERSION}-linux-x64.tar.xz"; \
+    tarball="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"; \
+    curl -fsSLO "${base}/${tarball}"; \
     curl -fsSLO "${base}/SHASUMS256.txt"; \
-    grep " node-v${NODE_VERSION}-linux-x64.tar.xz\$" SHASUMS256.txt | sha256sum -c -; \
-    tar -xJf "node-v${NODE_VERSION}-linux-x64.tar.xz" -C /usr/local --strip-components=1 --no-same-owner; \
-    rm -f "node-v${NODE_VERSION}-linux-x64.tar.xz" SHASUMS256.txt; \
+    grep " ${tarball}\$" SHASUMS256.txt | sha256sum -c -; \
+    tar -xJf "${tarball}" -C /usr/local --strip-components=1 --no-same-owner; \
+    rm -f "${tarball}" SHASUMS256.txt; \
     node --version; npm --version
 
 # Playwright and its Firefox build. --with-deps installs the shared libraries
