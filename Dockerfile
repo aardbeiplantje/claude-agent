@@ -1,5 +1,6 @@
 # The final targets share one "base" stage. bash, dev, arduino and web build for
-# linux/amd64 and linux/arm64 (TARGETARCH); rocm and android are amd64 only.
+# linux/amd64 and linux/arm64 (TARGETARCH); rocm and android are amd64 only, and
+# hailo is arm64 only (Raspberry Pi 5).
 #
 #   rocm     ROCm dev image + Rust (rustup) + Python venv (torch from TheRock) + Claude Code
 #            (BASE_IMAGE=rocm/dev-ubuntu-24.04)
@@ -12,6 +13,9 @@
 #            + Gradle + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #   web      Ubuntu + Node.js (LTS) + Playwright with Firefox (for checking web UIs)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
+#   hailo    Raspberry Pi 5 only: Debian bookworm + HailoRT/hailortcli + TAPPAS
+#            (GStreamer hailonet/hailofilter) + libcamera + Claude Code
+#            (BASE_IMAGE=debian:bookworm-slim)
 #
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
@@ -356,6 +360,58 @@ RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
 # System-wide Claude Code instructions (managed policy location, under /etc, so
 # the ~/.claude volume does not hide them). CLAUDE.md imports AGENTS.md. Copied
 # last, so editing them only rebuilds this layer in each image.
+COPY config/claude-code/ /etc/claude-code/
+
+WORKDIR ${HOME}/work
+
+# --------------------------------------------------------------------------
+FROM base AS hailo
+
+# Raspberry Pi 5 with a Hailo-8 (arm64 only; run.sh refuses other hosts). Built on
+# Debian bookworm, the release Raspberry Pi OS is based on: the Hailo packages come
+# from the Raspberry Pi apt repository for bookworm, and its HailoRT Python bindings
+# are for bookworm's python3 (3.11). The driver stays on the host (hailo-all, dkms);
+# the container gets /dev/hailo0 through run.sh. Contents: hailortcli, the HailoRT
+# Python package, GStreamer with the TAPPAS elements (hailonet, hailofilter,
+# hailooverlay), libcamera and the Python GStreamer/OpenCV/numpy bindings.
+ARG USERNAME=agent
+ARG CLAUDE_REFRESH=0
+ARG TARGETARCH
+USER root
+RUN [ "${TARGETARCH}" = arm64 ] || { echo "hailo: arm64 (Raspberry Pi 5) only" >&2; exit 1; }
+
+# The Raspberry Pi apt repository, signed (same as the Pi's own sources)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gnupg \
+ && install -d -m 0755 /etc/apt/keyrings \
+ && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/raspberrypi-archive-keyring.gpg \
+ && echo "deb [signed-by=/etc/apt/keyrings/raspberrypi-archive-keyring.gpg] http://archive.raspberrypi.com/debian/ bookworm main" \
+        > /etc/apt/sources.list.d/raspi.list \
+ && apt-get update
+
+# HailoRT and TAPPAS core, pinned as in the hailo-yolo Dockerfile (hailo-raspi stage)
+ADD https://archive.raspberrypi.com/debian/pool/main/h/hailort/hailort_4.23.0_arm64.deb /tmp/hailort_4.23.0_arm64.deb
+ADD https://archive.raspberrypi.com/debian/pool/main/h/hailo-tappas-core/hailo-tappas-core_3.31.0-1_arm64.deb /tmp/hailo-tappas-core_3.31.0-1_arm64.deb
+RUN apt-get install -y --no-install-recommends \
+        hailo-all python3-hailort /tmp/*.deb \
+        gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-plugins-rtp \
+        gstreamer1.0-libav gstreamer1.0-libcamera gir1.2-gstreamer-1.0 \
+        libgstreamer-opencv1.0-0 python3-gi python3-numpy python3-opencv \
+        python3-protobuf v4l-utils \
+ && rm -f /tmp/*.deb \
+ && rm -rf /var/lib/apt/lists/* \
+ && hailortcli --version
+
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
+
+# Claude Code, as in the bash target
+RUN echo "claude refresh: ${CLAUDE_REFRESH}" \
+ && curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+
 COPY config/claude-code/ /etc/claude-code/
 
 WORKDIR ${HOME}/work

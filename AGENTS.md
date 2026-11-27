@@ -6,7 +6,7 @@ containers is `config/claude-code/AGENTS.md`, a different file.
 ## Layout
 
 - `Dockerfile`: one `base` stage, then the targets `rocm`, `bash` (basic), `dev` (full),
-  `arduino`, `android` and `web`.
+  `arduino`, `android`, `web` and `hailo`.
 - `docker-bake.hcl`: build definitions. The `local` group is what `docker buildx bake` builds.
 - `run.sh`: starts a container for the current directory. It builds the image first when it is
   missing or was built for the other architecture.
@@ -18,6 +18,9 @@ containers is `config/claude-code/AGENTS.md`, a different file.
   defaults to amd64. `run.sh` defaults to the host's architecture.
 - `rocm` and `android` are amd64 only. Do not give them an arm64 platform, and keep
   `run.sh` refusing arm64 for them.
+- `hailo` is arm64 only and built on `debian:bookworm-slim` (the Raspberry Pi OS release
+  its Hailo packages are built for). `run.sh` refuses it on amd64 and on any host whose
+  device-tree model is not a Raspberry Pi 5.
 - Use the existing `DOCKER_PLATFORM` name. Do not add another variable for the same thing.
 
 ## Checks

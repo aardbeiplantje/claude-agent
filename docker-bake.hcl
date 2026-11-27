@@ -7,6 +7,7 @@
 #   docker buildx bake arduino         only claude-agent:arduino
 #   docker buildx bake android         only claude-agent:android
 #   docker buildx bake web             only claude-agent:web
+#   docker buildx bake hailo           only claude-agent:hailo (Raspberry Pi 5 only, arm64)
 #   DOCKER_PLATFORM=linux/arm64 docker buildx bake   the arm64 set (default linux/amd64)
 #   docker buildx bake --print         show the resolved configuration
 #
@@ -37,6 +38,11 @@ variable "ROCM_IMAGE" {
 
 variable "UBUNTU_IMAGE" {
   default = "ubuntu:24.04"
+}
+
+variable "DEBIAN_IMAGE" {
+  # bookworm: the release the Raspberry Pi OS and its Hailo packages are built for
+  default = "debian:bookworm-slim"
 }
 
 variable "AGENT_USER" {
@@ -125,9 +131,10 @@ group "default" {
 }
 
 # Everything for the platform, loaded into the local image store. On arm64 the
-# amd64-only images (rocm, android) are left out.
+# amd64-only images (rocm, android) are left out, and hailo (Raspberry Pi 5) is
+# added; on amd64 hailo is left out.
 group "local" {
-  targets = DOCKER_PLATFORM == "linux/arm64" ? ["bash", "dev", "arduino", "web"] : ["rocm", "bash", "dev", "arduino", "android", "web"]
+  targets = DOCKER_PLATFORM == "linux/arm64" ? ["bash", "dev", "arduino", "web", "hailo"] : ["rocm", "bash", "dev", "arduino", "android", "web"]
 }
 
 # Shared settings; the leading underscore marks it as not meant to be built alone
@@ -214,5 +221,15 @@ target "web" {
     BASE_IMAGE         = UBUNTU_IMAGE
     NODE_VERSION       = NODE_VERSION
     PLAYWRIGHT_VERSION = PLAYWRIGHT_VERSION
+  }
+}
+
+target "hailo" {
+  inherits = ["_common"]
+  target   = "hailo"
+  platforms = ["linux/arm64"]
+  tags     = ["${IMAGE_REPO}:hailo"]
+  args = {
+    BASE_IMAGE = DEBIAN_IMAGE
   }
 }

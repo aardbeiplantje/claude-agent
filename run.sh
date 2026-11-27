@@ -8,6 +8,8 @@
 #   ./run.sh --arduino          claude in the arduino-cli/ESP32 image instead
 #   ./run.sh --android          claude in the Android SDK/Gradle image
 #   ./run.sh --web              claude in the web image (Node.js, Playwright + Firefox)
+#   ./run.sh --hailo            claude in the Hailo-8 image (hailortcli, TAPPAS, GStreamer, libcamera);
+#                               Raspberry Pi 5 only: arm64 build, and refuses any other host
 #   ./run.sh --continue         any other args starting with "-" go to claude
 #   ./run.sh bash               anything else runs as a command
 #   ./run.sh --build            rebuild the selected image first (build cache kept)
@@ -57,7 +59,7 @@
 # Environment overrides:
 #   WORKSPACE      host directory to work in        (default: $PWD)
 #   IMAGE_REPO     image repository                  (default: claude-agent)
-#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|dev|arduino|android|web>)
+#   IMAGE          full image tag                    (default: $IMAGE_REPO:<rocm|bash|dev|arduino|android|web|hailo>)
 #   DOCKER_PLATFORM linux/amd64 or linux/arm64        (default: this host's; rocm and android are amd64 only)
 #   PORTS          container ports to publish on 127.0.0.1, space-separated
 #                  (default: none; e.g. PORTS="5173 8080" for a dev server)
@@ -106,6 +108,7 @@ while [ $# -gt 0 ]; do
         --arduino) flavor=arduino ;;
         --android) flavor=android ;;
         --web)     flavor=web ;;
+        --hailo)   flavor=hailo ;;
         --build)   build=1 ;;
         --update)  build=1; refresh=(--pull) ;;
         --ssh-agent)    ssh_agent=1 ;;
@@ -155,6 +158,18 @@ arch=${DOCKER_PLATFORM#linux/}
 if [ "$arch" = arm64 ]; then
     case "$flavor" in
         rocm|android) echo "run.sh: $flavor is amd64 only; there is no arm64 build" >&2; exit 2 ;;
+    esac
+fi
+# hailo is for a Raspberry Pi 5 with a Hailo-8 only: arm64 image, and the host
+# must be a Pi 5 (the device-tree model says so), for building and running alike.
+if [ "$flavor" = hailo ]; then
+    if [ "$arch" != arm64 ]; then
+        echo "run.sh: hailo is arm64 only (Raspberry Pi 5); DOCKER_PLATFORM=$DOCKER_PLATFORM" >&2; exit 2
+    fi
+    pi_model=$(tr -d '\0' </proc/device-tree/model 2>/dev/null || true)
+    case "$pi_model" in
+        *"Raspberry Pi 5"*) ;;
+        *) echo "run.sh: hailo runs on a Raspberry Pi 5 only (this host: ${pi_model:-unknown})" >&2; exit 2 ;;
     esac
 fi
 SERIAL_MAX=${SERIAL_MAX:-8}
@@ -263,6 +278,17 @@ case "$flavor" in
         # Firefox uses /dev/shm; Docker's 64 MB default makes it crash on
         # larger pages.
         args+=(--shm-size=1g)
+        ;;
+    hailo)
+        # Hailo-8 (PCIe, /dev/hailo0; the driver is on the host). HailoRT locks
+        # its buffers in memory, hence IPC_LOCK. The camera nodes (libcamera:
+        # video, media and dma_heap) are passed for camera pipelines; a node that
+        # doesn't exist is skipped.
+        add_dev /dev/hailo0
+        for d in /dev/video* /dev/media* /dev/dma_heap/*; do
+            add_dev "$d"
+        done
+        args+=(--cap-add=IPC_LOCK --shm-size=1g)
         ;;
 esac
 
