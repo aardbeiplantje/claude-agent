@@ -396,9 +396,11 @@ RUN apt-get update \
         > /etc/apt/sources.list.d/raspi.list \
  && apt-get update
 
-# HailoRT, TAPPAS and the Python bindings from the stock Raspberry Pi OS packages
+# HailoRT, TAPPAS and the Python bindings from the stock Raspberry Pi OS packages.
+# Userspace only: hailo-all would also pull in hailort-pcie-driver (a DKMS kernel
+# module, which can't build in a container). The driver runs on the host.
 RUN apt-get install -y --no-install-recommends \
-        hailo-all python3-hailort \
+        hailort python3-hailort hailo-tappas-core \
         gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-plugins-rtp \
         gstreamer1.0-libav gstreamer1.0-libcamera gir1.2-gstreamer-1.0 \
