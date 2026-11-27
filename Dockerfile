@@ -383,13 +383,16 @@ ARG TARGETARCH
 USER root
 RUN [ "${TARGETARCH}" = arm64 ] || { echo "hailo: arm64 (Raspberry Pi 5) only" >&2; exit 1; }
 
-# The Raspberry Pi apt repository, signed (same as the Pi's own sources)
+# The Raspberry Pi apt repository. Its signing key is taken from the
+# raspberrypi-archive-keyring package (2025.1+rpt1): the bare key served at
+# raspberrypi.gpg.key has a SHA-1 binding that apt now rejects. The package is
+# what Raspberry Pi OS uses itself, and it installs the keyring under
+# /usr/share/keyrings.
+ADD https://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-archive-keyring/raspberrypi-archive-keyring_2025.1+rpt1_all.deb /tmp/raspberrypi-archive-keyring.deb
 RUN apt-get update \
- && apt-get install -y --no-install-recommends gnupg \
- && install -d -m 0755 /etc/apt/keyrings \
- && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
-        | gpg --dearmor -o /etc/apt/keyrings/raspberrypi-archive-keyring.gpg \
- && echo "deb [signed-by=/etc/apt/keyrings/raspberrypi-archive-keyring.gpg] http://archive.raspberrypi.com/debian/ trixie main" \
+ && apt-get install -y --no-install-recommends /tmp/raspberrypi-archive-keyring.deb \
+ && rm -f /tmp/raspberrypi-archive-keyring.deb \
+ && echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.pgp] http://archive.raspberrypi.com/debian/ trixie main" \
         > /etc/apt/sources.list.d/raspi.list \
  && apt-get update
 
