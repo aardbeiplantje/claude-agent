@@ -13,9 +13,9 @@
 #            + Gradle + Claude Code (BASE_IMAGE=ubuntu:24.04)
 #   web      Ubuntu + Node.js (LTS) + Playwright with Firefox (for checking web UIs)
 #            + Claude Code (BASE_IMAGE=ubuntu:24.04)
-#   hailo    Raspberry Pi 5 only: Debian bookworm + HailoRT/hailortcli + TAPPAS
+#   hailo    Raspberry Pi 5 only: Debian trixie + HailoRT/hailortcli + TAPPAS
 #            (GStreamer hailonet/hailofilter) + libcamera + Claude Code
-#            (BASE_IMAGE=debian:bookworm-slim)
+#            (BASE_IMAGE=debian:trixie-slim)
 #
 # docker-bake.hcl sets BASE_IMAGE per target; "docker buildx bake" builds all.
 
@@ -52,7 +52,7 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/excludes \
         entr direnv \
  && { apt-cache show ltrace >/dev/null 2>&1 \
         && apt-get install -y --no-install-recommends ltrace \
-        || echo "ltrace is not in this release (bookworm): skipped" >&2; } \
+        || echo "ltrace is not in this release: skipped" >&2; } \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
@@ -371,9 +371,9 @@ WORKDIR ${HOME}/work
 FROM base AS hailo
 
 # Raspberry Pi 5 with a Hailo-8 (arm64 only; run.sh refuses other hosts). Built on
-# Debian bookworm, the release Raspberry Pi OS is based on: the Hailo packages come
-# from the Raspberry Pi apt repository for bookworm, and its HailoRT Python bindings
-# are for bookworm's python3 (3.11). The driver stays on the host (hailo-all, dkms);
+# Debian trixie (13), the release current Raspberry Pi OS is based on: the Hailo packages come
+# from the Raspberry Pi apt repository for trixie, and its HailoRT Python bindings
+# are for trixie's python3 (3.13). The driver stays on the host (hailo-all, dkms);
 # the container gets /dev/hailo0 through run.sh. Contents: hailortcli, the HailoRT
 # Python package, GStreamer with the TAPPAS elements (hailonet, hailofilter,
 # hailooverlay), libcamera and the Python GStreamer/OpenCV/numpy bindings.
@@ -389,7 +389,7 @@ RUN apt-get update \
  && install -d -m 0755 /etc/apt/keyrings \
  && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/raspberrypi-archive-keyring.gpg \
- && echo "deb [signed-by=/etc/apt/keyrings/raspberrypi-archive-keyring.gpg] http://archive.raspberrypi.com/debian/ bookworm main" \
+ && echo "deb [signed-by=/etc/apt/keyrings/raspberrypi-archive-keyring.gpg] http://archive.raspberrypi.com/debian/ trixie main" \
         > /etc/apt/sources.list.d/raspi.list \
  && apt-get update
 

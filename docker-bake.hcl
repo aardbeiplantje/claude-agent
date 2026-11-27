@@ -41,8 +41,8 @@ variable "UBUNTU_IMAGE" {
 }
 
 variable "DEBIAN_IMAGE" {
-  # bookworm: the release the Raspberry Pi OS and its Hailo packages are built for
-  default = "debian:bookworm-slim"
+  # trixie: Debian 13, the release current Raspberry Pi OS is based on (matches the host)
+  default = "debian:trixie-slim"
 }
 
 variable "AGENT_USER" {
