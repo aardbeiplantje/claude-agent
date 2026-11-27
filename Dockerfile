@@ -393,17 +393,14 @@ RUN apt-get update \
         > /etc/apt/sources.list.d/raspi.list \
  && apt-get update
 
-# HailoRT and TAPPAS core, pinned as in the hailo-yolo Dockerfile (hailo-raspi stage)
-ADD https://archive.raspberrypi.com/debian/pool/main/h/hailort/hailort_4.23.0_arm64.deb /tmp/hailort_4.23.0_arm64.deb
-ADD https://archive.raspberrypi.com/debian/pool/main/h/hailo-tappas-core/hailo-tappas-core_3.31.0-1_arm64.deb /tmp/hailo-tappas-core_3.31.0-1_arm64.deb
+# HailoRT, TAPPAS and the Python bindings from the stock Raspberry Pi OS packages
 RUN apt-get install -y --no-install-recommends \
-        hailo-all python3-hailort /tmp/*.deb \
+        hailo-all python3-hailort \
         gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-plugins-rtp \
         gstreamer1.0-libav gstreamer1.0-libcamera gir1.2-gstreamer-1.0 \
         libgstreamer-opencv1.0-0 python3-gi python3-numpy python3-opencv \
         python3-protobuf v4l-utils \
- && rm -f /tmp/*.deb \
  && rm -rf /var/lib/apt/lists/* \
  && hailortcli --version
 
