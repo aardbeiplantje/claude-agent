@@ -48,8 +48,11 @@ RUN rm -f /etc/dpkg/dpkg.cfg.d/excludes \
         cpanminus perl-doc libperl-dev perltidy \
         libdbi-perl libdbd-sqlite3-perl libtext-csv-perl libyaml-libyaml-perl \
         libmoose-perl libreadonly-perl \
-        time ltrace man-db manpages tmux vim-tiny gawk psmisc moreutils bc ncdu \
+        time man-db manpages tmux vim-tiny gawk psmisc moreutils bc ncdu \
         entr direnv \
+ && { apt-cache show ltrace >/dev/null 2>&1 \
+        && apt-get install -y --no-install-recommends ltrace \
+        || echo "ltrace is not in this release (bookworm): skipped" >&2; } \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
