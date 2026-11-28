@@ -25,6 +25,8 @@
 #   ./run.sh --no-nrf-sniffer   don't (default)
 #   ./run.sh --bluetooth        host network + Bluetooth HCI access (default for --dev/--arduino)
 #   ./run.sh --no-bluetooth     don't
+#   ./run.sh --camera           allow both camera ports (/dev/video*, /dev/media*, dma_heap) for libcamera
+#   ./run.sh --no-camera        don't (default, except for --hailo)
 #   ./run.sh --port 5173        publish a container port on the host (127.0.0.1), repeatable
 #   ./run.sh --restart unless-stopped   keep it across reboots: detached (-d), no --rm
 #                                       (policies: no, always, unless-stopped, on-failure)
@@ -76,6 +78,7 @@
 #   NRF_SNIFFER    1 allows nRF52840 dongles, 0 doesn't (default: 0)
 #   NRF_IDS        nRF52840 vid:pid list         (default: "1915:521f 1915:522a", the Nordic DFU bootloader and the running sniffer)
 #   BLUETOOTH      1 gives Bluetooth access (host network), 0 doesn't (default: 1 for dev/arduino, 0 otherwise)
+#   CAMERA         1 passes the camera nodes (both ports), 0 doesn't (default: 1 for hailo, 0 otherwise)
 #   AGENT_USER     user name inside the image        (default: agent)
 #   BUILDER        buildx builder to build with      (default: the active one)
 #   DOCKER_ARGS    extra "docker run" arguments, word-split
@@ -94,6 +97,7 @@ rtlsdr_ids=${RTLSDR_IDS:-"0bda:2838 0bda:2832"}   # RTL2832U: NESDR SMArt (2838)
 nrf_sniffer=${NRF_SNIFFER:-0}
 nrf_ids=${NRF_IDS:-"1915:521f 1915:522a"}         # Nordic nRF52840 Dongle: DFU bootloader, sniffer firmware
 bluetooth=${BLUETOOTH:-}
+camera=${CAMERA:-}
 restart=no
 force=0
 refresh=()
@@ -123,6 +127,8 @@ while [ $# -gt 0 ]; do
         --no-nrf-sniffer) nrf_sniffer=0 ;;
         --bluetooth)    bluetooth=1 ;;
         --no-bluetooth) bluetooth=0 ;;
+        --camera)       camera=1 ;;
+        --no-camera)    camera=0 ;;
         --port)         shift; ports+=("$1") ;;
         --restart)      shift; restart=${1:-} ;;
         --force)        force=1 ;;
@@ -178,6 +184,9 @@ if [ -z "$serial" ]; then
 fi
 if [ -z "$bluetooth" ]; then
     { [ "$flavor" = dev ] || [ "$flavor" = arduino ]; } && bluetooth=1 || bluetooth=0
+fi
+if [ -z "$camera" ]; then
+    [ "$flavor" = hailo ] && camera=1 || camera=0
 fi
 
 # ~/rocm-hip.git -> /work/rocm-hip
@@ -281,16 +290,20 @@ case "$flavor" in
         ;;
     hailo)
         # Hailo-8 (PCIe, /dev/hailo0; the driver is on the host). HailoRT locks
-        # its buffers in memory, hence IPC_LOCK. The camera nodes (libcamera:
-        # video, media and dma_heap) are passed for camera pipelines; a node that
-        # doesn't exist is skipped.
+        # its buffers in memory, hence IPC_LOCK. Cameras: see --camera below.
         add_dev /dev/hailo0
-        for d in /dev/video* /dev/media* /dev/dma_heap/*; do
-            add_dev "$d"
-        done
         args+=(--cap-add=IPC_LOCK --shm-size=1g)
         ;;
 esac
+
+# Cameras (libcamera): both CSI ports' video and media nodes, and the DMA heaps
+# its buffers come from. Nodes that don't exist are skipped, so this is safe
+# with one camera or none.
+if [ "$camera" = 1 ]; then
+    for d in /dev/video* /dev/media* /dev/dma_heap/*; do
+        add_dev "$d"
+    done
+fi
 
 # Serial boards: allow whole device types (name:major), not single devices,
 # so boards plugged in later work too. The entrypoint creates the nodes.
