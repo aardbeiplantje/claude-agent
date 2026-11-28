@@ -296,12 +296,12 @@ case "$flavor" in
         ;;
 esac
 
-# Cameras (libcamera): both CSI ports' video and media nodes, and the DMA heaps
-# its buffers come from. Nodes that don't exist are skipped, so this is safe
-# with one camera or none.
+# Cameras (libcamera): both CSI ports' video, media and v4l-subdev nodes (the
+# sensors are subdevs, libcamera opens them), and the DMA heaps its buffers come
+# from. Nodes that don't exist are skipped, so this is safe with one camera or none.
 if [ "$camera" = 1 ]; then
     cam_nodes=()
-    for d in /dev/video* /dev/media* /dev/dma_heap/*; do
+    for d in /dev/video* /dev/media* /dev/v4l-subdev* /dev/dma_heap/*; do
         [ -c "$d" ] && cam_nodes+=("$d")
         add_dev "$d"
     done
