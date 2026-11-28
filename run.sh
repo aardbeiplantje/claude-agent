@@ -300,9 +300,21 @@ esac
 # its buffers come from. Nodes that don't exist are skipped, so this is safe
 # with one camera or none.
 if [ "$camera" = 1 ]; then
+    cam_nodes=()
     for d in /dev/video* /dev/media* /dev/dma_heap/*; do
+        [ -c "$d" ] && cam_nodes+=("$d")
         add_dev "$d"
     done
+    echo "run.sh: camera nodes passed: ${#cam_nodes[@]} (${cam_nodes[*]:-none})" >&2
+    # libcamera reads each media device's udev properties from /run/udev/data;
+    # without the host's udev database it finds no camera. Read-only is enough.
+    if [ -d /run/udev ]; then
+        args+=(-v /run/udev:/run/udev:ro)
+    fi
+    # CAMERA_DEBUG=1 turns on libcamera's log, to see why a camera is not found
+    if [ "${CAMERA_DEBUG:-0}" = 1 ]; then
+        args+=(-e 'LIBCAMERA_LOG_LEVELS=*:WARNING,RPI:DEBUG,PipelineHandler:DEBUG')
+    fi
 fi
 
 # Serial boards: allow whole device types (name:major), not single devices,
