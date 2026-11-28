@@ -400,7 +400,7 @@ RUN apt-get update \
 # Userspace only: hailo-all would also pull in hailort-pcie-driver (a DKMS kernel
 # module, which can't build in a container). The driver runs on the host.
 RUN apt-get install -y --no-install-recommends \
-        hailort python3-hailort hailo-tappas-core \
+        hailort python3-hailort hailo-tappas-core python3-hailo-tappas \
         gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-plugins-rtp \
         gstreamer1.0-libav gstreamer1.0-libcamera gir1.2-gstreamer-1.0 \
